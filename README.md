@@ -1,68 +1,101 @@
 # RoadPilot-Visualization
 
-RoadPilot-Visualization is the planned set of visualization components and development tools for the RoadPilot ecosystem.
+Standalone visualization and debugging application for the RoadPilot ecosystem.
 
-> **Status: early planning.** This repository does not contain source code yet. Responsibilities, architecture and roadmap below describe the **planned** scope, not existing functionality.
+> **Status: early development (Phase 2, Canvas 2D renderer).** The application runs in a browser on deterministic simulated data. It is not connected to RoadPilot or RoadPilot-Map yet, and there are no releases.
 
 ## Purpose
 
-This repository is meant to make the internal state of RoadPilot visible, for users and especially for developers who need to understand and debug what the system sees and decides.
+RoadPilot-Visualization shows what the RoadPilot driving stack perceives and plans: road geometry and lanes, the ego vehicle, other traffic, traffic lights, the planned trajectory, steering and curvature, Adaptive Cruise Control information, and telemetry and debugging panels.
 
 ## Key responsibilities
 
 - Vehicle visualization
 - Lane visualization
-- Route visualization
+- Route visualization (planned; depends on RoadPilot-Map data)
 - Telemetry visualization
 - Debugging views
 - Simulation visualization
 - Development tools
 
-## Architecture overview
+RoadPilot-Visualization is intended to be used by the RoadPilot application and by developers working on RoadPilot-Map and the driving logic.
 
-The following structure is a proposal and may change as development starts:
+## Scope
 
-- **Rendering components**: reusable views for vehicles, lanes and routes.
-- **Telemetry views**: displays of vehicle and game telemetry over time.
-- **Debugging views**: overlays and inspectors for the internal state of RoadPilot.
-- **Simulation views**: visual playback of simulated or recorded driving situations.
-- **Developer tools**: standalone utilities built on the components above.
+It is a separate repository and a separate application. It is a **read-only** viewer:
+
+- It contains no driving decisions and no vehicle control logic.
+- It cannot send steering, throttle or brake commands, and it has no channel back to RoadPilot.
+- It does not modify RoadPilot or RoadPilot-Map.
+
+## Implemented
+
+| Area                                                             | Status                                                                                                            |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Dashboard layout (sidebar, metrics, scene, inspector, telemetry) | Data-driven from a `SceneFrame`                                                                                   |
+| Scene model (`src/domain`)                                       | Ego, agents, signals, lanes, trajectory, ACC, observed inputs, status                                             |
+| Data source interface and deterministic simulation               | Highway-follow scenario with play, pause, seek and speed                                                          |
+| Playback clock                                                   | Looping timeline, injectable scheduler for tests                                                                  |
+| State (Zustand)                                                  | Latest frame, source status, playback state, layer toggles                                                        |
+| `roadpilot-visualization-frame` v1                               | Wire contract with validation and serialization, see [`docs/contracts`](docs/contracts/visualization-frame-v1.md) |
+| 2D renderer                                                      | Canvas 2D with pan, zoom, ego-follow and seven independent layers; drawing runs outside React                     |
+
+Not implemented yet: scenario library, session recording and replay, RoadPilot-Map loading, live connection to RoadPilot, 3D rendering, Tauri packaging.
+
+## Requirements
+
+- Node.js 22.12 or newer
+- npm
+
+Tauri 2 and the Rust toolchain are only needed for the later packaging phase.
+
+## Development
+
+```sh
+npm install
+npm run dev      # http://127.0.0.1:5173
+npm run check    # typecheck, lint, format check and tests
+npm run build
+```
+
+Dependency versions are pinned exactly in `package.json`. TypeScript is pinned to 6.0.x because `typescript-eslint` does not support TypeScript 7 yet.
+
+## Architecture
+
+```
+ui -> state -> sources -> contract -> domain
+ui -> render -> domain
+```
+
+Rendering, data models and data sources are strictly separated, and the dependency direction is enforced by ESLint. Details are in [`docs/architecture/overview.md`](docs/architecture/overview.md); decisions are recorded in [`docs/adr/`](docs/adr/README.md).
+
+## Coordinates and units
+
+The scene frame uses metres. RoadPilot-Map coordinates use a world unit whose physical size is **not confirmed**, so they are never treated as metres. All conversions live in [`src/domain/coordinates.ts`](src/domain/coordinates.ts). See [the architecture overview](docs/architecture/overview.md#coordinates-and-units).
 
 ## Integration with the RoadPilot ecosystem
 
 RoadPilot is split into independent repositories. Each one is developed, versioned and released on its own; there is no monorepo and no shared source code.
 
-| Repository | Role |
-|---|---|
-| [RoadPilot](https://github.com/RoadPilotHQ/RoadPilot) | Main desktop application |
-| [RoadPilot-Map](https://github.com/RoadPilotHQ/RoadPilot-Map) | Map processing and geographic data |
-| [RoadPilot-Language](https://github.com/RoadPilotHQ/RoadPilot-Language) | Translations and localization |
-| **RoadPilot-Visualization** (this repository) | Visualization components and development tools |
-| [RoadPilot-Plugin](https://github.com/RoadPilotHQ/RoadPilot-Plugin) | Plugin architecture and SDK |
-| [RoadPilot-Website](https://github.com/RoadPilotHQ/RoadPilot-Website) | Official website |
-| [RoadPilot-Discord](https://github.com/RoadPilotHQ/RoadPilot-Discord) | Discord community infrastructure |
-| [RoadPilot-Docs](https://github.com/RoadPilotHQ/RoadPilot-Docs) | Central documentation |
+| Repository                                                              | Role                                           |
+| ----------------------------------------------------------------------- | ---------------------------------------------- |
+| [RoadPilot](https://github.com/RoadPilotHQ/RoadPilot)                   | Main desktop application                       |
+| [RoadPilot-Map](https://github.com/RoadPilotHQ/RoadPilot-Map)           | Map processing and geographic data             |
+| [RoadPilot-Language](https://github.com/RoadPilotHQ/RoadPilot-Language) | Translations and localization                  |
+| **RoadPilot-Visualization** (this repository)                           | Visualization components and development tools |
+| [RoadPilot-Plugin](https://github.com/RoadPilotHQ/RoadPilot-Plugin)     | Plugin architecture and SDK                    |
+| [RoadPilot-Website](https://github.com/RoadPilotHQ/RoadPilot-Website)   | Official website                               |
+| [RoadPilot-Discord](https://github.com/RoadPilotHQ/RoadPilot-Discord)   | Discord community infrastructure               |
+| [RoadPilot-Docs](https://github.com/RoadPilotHQ/RoadPilot-Docs)         | Central documentation                          |
 
-RoadPilot-Visualization is intended to be used by the RoadPilot application and by developers working on RoadPilot-Map and the driving logic. Its data inputs have not been defined yet.
+How Visualization is meant to receive data:
 
-## Development status
+- **RoadPilot** will provide live data through the `roadpilot-visualization-frame` contract. The interface is not defined on the RoadPilot side yet.
+- **RoadPilot-Map** will provide map data through its versioned navigation graph export (JSON Lines).
 
-| Area | Status |
-|---|---|
-| Source code | Not started |
-| Architecture | In planning |
-| Releases | None |
+## Roadmap
 
-## Planned roadmap
-
-Planned work, in no fixed order and without dates:
-
-- [ ] Select the rendering technology
-- [ ] Define the data inputs for each view
-- [ ] Build lane and route visualization
-- [ ] Build telemetry visualization
-- [ ] Build debugging and simulation views
-- [ ] Package the development tools
+The development phases and their status are in [`docs/architecture/phases.md`](docs/architecture/phases.md).
 
 ## Contributing
 
@@ -73,6 +106,10 @@ Until then, please open an issue before starting any work, so it can be coordina
 ## License
 
 Licensing is currently undecided. No license has been selected for this repository yet. Until a license is published here, no permission is granted to use, copy, modify or distribute its contents beyond what the GitHub Terms of Service allow.
+
+## Repository
+
+`git@github.com:RoadPilotHQ/RoadPilot-Visualization.git`
 
 ---
 

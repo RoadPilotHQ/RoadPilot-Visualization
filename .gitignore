@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+coverage/
+src-tauri/target/
+.env
+.env.*
+*.log
+
+# Local-only tooling files
+CLAUDE.md
+CLAUDE.local.md
+.claude/settings.local.json
