@@ -5,6 +5,7 @@ const MAX_LINE_LENGTH = 4 * 1024 * 1024
 const MAX_TOPOLOGY_NODES = 2_000_000
 const MAX_TOPOLOGY_EDGES = 50_000
 const EDGE_STATUS_CODE = { confirmed: 0, candidate: 1, unknown: 2, forbidden: 3 } as const
+const NODE_KIND_CODE = { lane_entry: 0, lane_exit: 1, prefab_input: 2, prefab_output: 3 } as const
 const HEX_UID = /^[0-9a-f]{1,16}$/
 const safeCount = z.number().int().nonnegative().safe()
 const coordinate = z.number().int().safe()
@@ -89,8 +90,12 @@ export function createNavigationGraphV1Accumulator() {
   let missingPositionCount = 0
   let footerSeen = false
   let nodePositions: Float64Array | null = null
+  let nodeKinds = new Uint8Array(0)
   let sampledEdges = new Uint32Array(0)
   let sampledEdgeCount = 0
+  const sampledSources: string[] = []
+  const categories: string[] = []
+  const categoryCodes = new Map<string, number>()
   let sampleStride = 1
   let minX = Number.POSITIVE_INFINITY
   let minY = Number.POSITIVE_INFINITY
@@ -119,8 +124,9 @@ export function createNavigationGraphV1Accumulator() {
       if (header.counts.nodes <= MAX_TOPOLOGY_NODES) {
         nodePositions = new Float64Array(header.counts.nodes * 2)
         nodePositions.fill(Number.NaN)
+        nodeKinds = new Uint8Array(header.counts.nodes)
         sampleStride = Math.max(1, Math.ceil(header.counts.edges / MAX_TOPOLOGY_EDGES))
-        sampledEdges = new Uint32Array(Math.min(MAX_TOPOLOGY_EDGES, header.counts.edges) * 3)
+        sampledEdges = new Uint32Array(Math.min(MAX_TOPOLOGY_EDGES, header.counts.edges) * 5)
       }
       return
     }
@@ -142,6 +148,7 @@ export function createNavigationGraphV1Accumulator() {
         }
         nodeCount += 1
         increment(nodesByKind, node.kind)
+        if (nodePositions) nodeKinds[node.id] = NODE_KIND_CODE[node.kind]
         if (node.position === null) missingPositionCount += 1
         else {
           positionedNodeCount += 1
@@ -179,12 +186,21 @@ export function createNavigationGraphV1Accumulator() {
             Number.isFinite(nodePositions[fromOffset + 1]) &&
             Number.isFinite(nodePositions[toOffset]) &&
             Number.isFinite(nodePositions[toOffset + 1]) &&
-            sampledEdgeCount * 3 < sampledEdges.length
+            sampledEdgeCount * 5 < sampledEdges.length
           ) {
-            const edgeOffset = sampledEdgeCount * 3
-            sampledEdges[edgeOffset] = edge.from
-            sampledEdges[edgeOffset + 1] = edge.to
-            sampledEdges[edgeOffset + 2] = EDGE_STATUS_CODE[edge.status]
+            let categoryCode = categoryCodes.get(edge.category)
+            if (categoryCode === undefined) {
+              categoryCode = categories.length
+              categories.push(edge.category)
+              categoryCodes.set(edge.category, categoryCode)
+            }
+            const edgeOffset = sampledEdgeCount * 5
+            sampledEdges[edgeOffset] = edge.id
+            sampledEdges[edgeOffset + 1] = edge.from
+            sampledEdges[edgeOffset + 2] = edge.to
+            sampledEdges[edgeOffset + 3] = EDGE_STATUS_CODE[edge.status]
+            sampledEdges[edgeOffset + 4] = categoryCode
+            sampledSources.push(edge.source)
             sampledEdgeCount += 1
           }
         }
@@ -239,7 +255,10 @@ export function createNavigationGraphV1Accumulator() {
         topology: nodePositions
           ? {
               positions: nodePositions,
-              edges: sampledEdges.subarray(0, sampledEdgeCount * 3),
+              nodeKinds,
+              edges: sampledEdges.subarray(0, sampledEdgeCount * 5),
+              categories,
+              edgeSources: sampledSources,
               sampleStride,
               sampledEdgeCount,
               bounds,

@@ -104,7 +104,10 @@ describe('parseNavigationGraphV1', () => {
       bounds: { minX: 1, minY: 0, maxX: 2, maxY: 2 },
     })
     expect(Array.from(result.topology!.positions)).toEqual([1, 0, 2, 2])
-    expect(Array.from(result.topology!.edges)).toEqual([0, 1, 1])
+    expect(Array.from(result.topology!.nodeKinds)).toEqual([0, 1])
+    expect(Array.from(result.topology!.edges)).toEqual([0, 0, 1, 1, 0])
+    expect(result.topology!.categories).toEqual(['road_lane'])
+    expect(result.topology!.edgeSources).toEqual(['a'])
     expect(parseNavigationGraphV1(graph()).topology?.sampledEdgeCount).toBe(0)
   })
 })

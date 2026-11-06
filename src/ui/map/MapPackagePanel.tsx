@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, PointerEvent, WheelEvent } from 'react'
+import type {
+  ChangeEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent,
+  WheelEvent,
+} from 'react'
 import type { RoadPilotMapPackageV1 } from '@/domain/mapPackage'
+import { findMapGraphSelection } from '@/domain/mapGraphSelection'
+import type { MapGraphSelection } from '@/domain/mapGraphSelection'
 import { mapCurveSampleStride } from '@/domain/mapRendering'
 import { queryMapCurveSpatialIndex } from '@/domain/mapSpatialIndex'
 
@@ -121,7 +129,9 @@ export function MapPackagePanel() {
             )}
           </div>
           <NavigationGraphSummary graph={data.navigationGraph} />
-          {data.navigationGraph && <NavigationGraphCanvas graph={data.navigationGraph} />}
+          {data.navigationGraph && (
+            <NavigationGraphCanvas key={loadGeneration} graph={data.navigationGraph} />
+          )}
           <MapPackageCanvas key={loadGeneration} data={data} />
           <div className="map-package-legend">
             <span>
@@ -227,6 +237,9 @@ function GraphListGroup({ title, items }: { title: string; items: readonly strin
   )
 }
 
+const GRAPH_NODE_KINDS = ['lane_entry', 'lane_exit', 'prefab_input', 'prefab_output'] as const
+const GRAPH_EDGE_STATUSES = ['confirmed', 'candidate', 'unknown', 'forbidden'] as const
+
 function NavigationGraphCanvas({
   graph,
 }: {
@@ -242,6 +255,8 @@ function NavigationGraphCanvas({
   } | null>(null)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [selection, setSelection] = useState<MapGraphSelection | null>(null)
+  const draggedRef = useRef(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -283,15 +298,38 @@ function NavigationGraphCanvas({
       ctx.globalAlpha = 0.68
       for (let status = 0; status < colors.length; status += 1) {
         ctx.beginPath()
-        for (let index = 0; index < topology.edges.length; index += 3) {
-          if (topology.edges[index + 2] !== status) continue
-          const from = topology.edges[index]! * 2
-          const to = topology.edges[index + 1]! * 2
+        for (let index = 0; index < topology.edges.length; index += 5) {
+          if (topology.edges[index + 3] !== status) continue
+          const from = topology.edges[index + 1]! * 2
+          const to = topology.edges[index + 2]! * 2
           ctx.moveTo(screenX(topology.positions[from]!), screenY(topology.positions[from + 1]!))
           ctx.lineTo(screenX(topology.positions[to]!), screenY(topology.positions[to + 1]!))
         }
         ctx.strokeStyle = colors[status]!
         ctx.stroke()
+      }
+      if (selection?.type === 'edge') {
+        const edgeOffset = selection.sampleIndex * 5
+        const from = topology.edges[edgeOffset + 1]! * 2
+        const to = topology.edges[edgeOffset + 2]! * 2
+        ctx.beginPath()
+        ctx.moveTo(screenX(topology.positions[from]!), screenY(topology.positions[from + 1]!))
+        ctx.lineTo(screenX(topology.positions[to]!), screenY(topology.positions[to + 1]!))
+        ctx.strokeStyle = '#fff4a8'
+        ctx.lineWidth = 3
+        ctx.stroke()
+      } else if (selection?.type === 'node') {
+        const offset = selection.id * 2
+        ctx.beginPath()
+        ctx.arc(
+          screenX(topology.positions[offset]!),
+          screenY(topology.positions[offset + 1]!),
+          5,
+          0,
+          Math.PI * 2,
+        )
+        ctx.fillStyle = '#fff4a8'
+        ctx.fill()
       }
       ctx.globalAlpha = 1
       ctx.fillStyle = '#9ba493'
@@ -317,10 +355,11 @@ function NavigationGraphCanvas({
       observer.disconnect()
       if (frame !== null) cancelAnimationFrame(frame)
     }
-  }, [graph, pan, zoom])
+  }, [graph, pan, selection, zoom])
 
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     if (event.button !== 0) return
+    draggedRef.current = false
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current = {
       pointerId: event.pointerId,
@@ -333,11 +372,50 @@ function NavigationGraphCanvas({
   const onPointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current
     if (drag?.pointerId === event.pointerId) {
+      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4) draggedRef.current = true
       setPan({ x: drag.panX + event.clientX - drag.x, y: drag.panY + event.clientY - drag.y })
     }
   }
   const endDrag = (event: PointerEvent<HTMLCanvasElement>) => {
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
+  }
+  const onCanvasClick = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    if (draggedRef.current) {
+      draggedRef.current = false
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    setSelection(
+      graph.topology
+        ? findMapGraphSelection(
+            graph.topology,
+            rect.width,
+            rect.height,
+            event.clientX - rect.left,
+            event.clientY - rect.top,
+            zoom,
+            pan,
+          )
+        : null,
+    )
+  }
+  const onCanvasKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    const topology = graph.topology
+    if (event.key === 'Escape') {
+      setSelection(null)
+      return
+    }
+    if (!topology || topology.sampledEdgeCount === 0) return
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    event.preventDefault()
+    const current = selection?.type === 'edge' ? selection.sampleIndex : -1
+    const next =
+      event.key === 'ArrowRight'
+        ? (current + 1) % topology.sampledEdgeCount
+        : current <= 0
+          ? topology.sampledEdgeCount - 1
+          : current - 1
+    setSelection({ type: 'edge', sampleIndex: next })
   }
 
   return (
@@ -355,8 +433,11 @@ function NavigationGraphCanvas({
         <canvas
           ref={canvasRef}
           className="map-package-canvas"
-          role="img"
-          aria-label="Sampled navigation graph topology from map-node positions; not lane geometry or a drivable route. Drag to pan and scroll to zoom."
+          role="application"
+          tabIndex={0}
+          aria-label="Sampled navigation graph topology from map-node positions; click a visible endpoint or connection for details, or focus this canvas and use left and right arrow keys to select sampled edges. Not lane geometry or a drivable route. Drag to pan and scroll to zoom."
+          onClick={onCanvasClick}
+          onKeyDown={onCanvasKeyDown}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
@@ -404,11 +485,89 @@ function NavigationGraphCanvas({
           Forbidden
         </span>
       </div>
+      <GraphSelectionDetails
+        graph={graph}
+        selection={selection}
+        onClear={() => setSelection(null)}
+      />
       <p className="map-graph-limitations">
         Schematic sample of connections between map-node positions. Lines are not lane geometry,
         validated routes, or drivable-road shapes. Map units are unconfirmed.
       </p>
     </div>
+  )
+}
+
+function GraphSelectionDetails({
+  graph,
+  selection,
+  onClear,
+}: {
+  graph: NonNullable<RoadPilotMapPackageV1['navigationGraph']>
+  selection: MapGraphSelection | null
+  onClear: () => void
+}) {
+  const topology = graph.topology
+  let details: { title: string; values: readonly [string, string][] } | null = null
+  if (topology && selection?.type === 'node') {
+    const offset = selection.id * 2
+    const kind = GRAPH_NODE_KINDS[topology.nodeKinds[selection.id] ?? 255] ?? 'unknown'
+    details = {
+      title: `Graph node ${selection.id}`,
+      values: [
+        ['Kind', kind],
+        [
+          'Map-node position',
+          `${topology.positions[offset]!.toFixed(2)}, ${topology.positions[offset + 1]!.toFixed(2)} map units (x, z)`,
+        ],
+      ],
+    }
+  } else if (topology && selection?.type === 'edge') {
+    const offset = selection.sampleIndex * 5
+    const edgeId = topology.edges[offset]!
+    const from = topology.edges[offset + 1]!
+    const to = topology.edges[offset + 2]!
+    const status = GRAPH_EDGE_STATUSES[topology.edges[offset + 3]!] ?? 'unknown'
+    const category = topology.categories[topology.edges[offset + 4]!] ?? 'unknown'
+    const fromKind = GRAPH_NODE_KINDS[topology.nodeKinds[from] ?? 255] ?? 'unknown'
+    const toKind = GRAPH_NODE_KINDS[topology.nodeKinds[to] ?? 255] ?? 'unknown'
+    details = {
+      title: `Graph edge ${edgeId}`,
+      values: [
+        ['Evidence status', status],
+        ['Category', category],
+        ['From → to', `${from} (${fromKind}) → ${to} (${toKind})`],
+        ['Source UID', `0x${topology.edgeSources[selection.sampleIndex]}`],
+      ],
+    }
+  }
+
+  return (
+    <section className="map-graph-selection" aria-live="polite" aria-label="Selected graph item">
+      {details ? (
+        <>
+          <div className="map-graph-selection-head">
+            <strong>{details.title}</strong>
+            <button type="button" onClick={onClear}>
+              Clear selection
+            </button>
+          </div>
+          <dl>
+            {details.values.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      ) : (
+        <p>
+          Click a visible sampled node or edge to inspect it. Only the displayed sample can be
+          selected.
+        </p>
+      )}
+    </section>
   )
 }
 

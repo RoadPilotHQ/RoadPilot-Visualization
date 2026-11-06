@@ -696,6 +696,52 @@ footer span {
 .map-graph-legend {
   margin-top: 9px;
 }
+.map-graph-selection {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #343a32;
+  color: #b8c0b1;
+  font:
+    10px 'DM Mono',
+    monospace;
+}
+.map-graph-selection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.map-graph-selection-head button {
+  border: 1px solid #4a5047;
+  border-radius: 5px;
+  padding: 4px 7px;
+  background: #272d26;
+  color: #dfe5d7;
+  cursor: pointer;
+  font: inherit;
+}
+.map-graph-selection dl {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+}
+.map-graph-selection dl > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.35fr) 1fr;
+  gap: 8px;
+}
+.map-graph-selection dt {
+  color: #8d9686;
+}
+.map-graph-selection dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #dfe5d7;
+}
+.map-graph-selection > p {
+  margin: 0;
+  line-height: 1.5;
+}
 .graph-edge-swatch {
   display: inline-block;
   width: 14px;

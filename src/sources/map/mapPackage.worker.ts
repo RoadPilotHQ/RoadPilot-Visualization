@@ -53,6 +53,7 @@ async function load(request: MapPackageLoadRequest) {
     if (data.navigationGraph?.topology) {
       transfer.push(
         data.navigationGraph.topology.positions.buffer as ArrayBuffer,
+        data.navigationGraph.topology.nodeKinds.buffer as ArrayBuffer,
         data.navigationGraph.topology.edges.buffer as ArrayBuffer,
       )
     }

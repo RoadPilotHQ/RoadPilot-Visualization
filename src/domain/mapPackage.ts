@@ -59,8 +59,12 @@ export interface MapNavigationGraph extends MapNavigationGraphSummary {
 export interface MapNavigationTopology {
   /** Packed x/z map-world coordinate pairs for graph nodes; missing positions are NaN. */
   readonly positions: Float64Array
-  /** Packed from/to/status-code triples for a deterministic edge sample. */
+  /** Node kind codes: lane_entry, lane_exit, prefab_input, prefab_output. */
+  readonly nodeKinds: Uint8Array
+  /** Packed edge id/from/to/status-code/category-code records for a deterministic sample. */
   readonly edges: Uint32Array
+  readonly categories: readonly string[]
+  readonly edgeSources: readonly string[]
   readonly sampleStride: number
   readonly sampledEdgeCount: number
   readonly bounds: MapPackageBounds | null
