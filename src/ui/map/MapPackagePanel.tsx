@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, PointerEvent, WheelEvent } from 'react'
 import type { RoadPilotMapPackageV1 } from '@/domain/mapPackage'
+import { mapCurveSampleStride } from '@/domain/mapRendering'
 import { queryMapCurveSpatialIndex } from '@/domain/mapSpatialIndex'
 
 type MapPackageWorkerResponse =
@@ -189,7 +190,7 @@ function MapPackageCanvas({ data }: { data: RoadPilotMapPackageV1 }) {
 
       ctx.globalAlpha = 0.72
       ctx.lineWidth = Math.max(0.45, Math.min(1.5, scale * 0.08))
-      const stride = scale < 0.2 ? 4 : scale < 1 ? 2 : 1
+      const stride = mapCurveSampleStride(scale)
       for (const inconsistent of [false, true]) {
         ctx.beginPath()
         for (const curveIndex of visibleCurveIndices) {
