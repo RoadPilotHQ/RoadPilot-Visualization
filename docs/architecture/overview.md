@@ -94,7 +94,7 @@ A Three.js backend can be added later as a second `Renderer` without changing th
 
 ## Map data
 
-Map data from RoadPilot-Map is static and large. It will be loaded separately from live frames through a loader in `src/sources`, using the versioned map package (`manifest.json` and `geometry.jsonl`, schema 1.x) documented in RoadPilot-Map. The package's optional `navigation.jsonl` contains the graph; road curves and nodes come from `geometry.jsonl`. Parsing happens in a Web Worker with a spatial index. The map layer shows only what the data contains; it does not invent lane geometry that RoadPilot-Map does not provide yet. Road curves in schema 1 are estimates, and map coordinates remain tagged as unconfirmed `map-world-unit` values.
+Map data from RoadPilot-Map is static and large. The current local package reader in `src/sources/map` validates schema 1 package integrity and reads `manifest.json` and `geometry.jsonl` in a Web Worker. It draws estimated road curves in a separate offline canvas; simulation coordinates are never overlaid because the physical size of map units is unconfirmed. The optional `navigation.jsonl` graph is integrity-checked but not displayed yet. A spatial index and graph overlay remain future work. The view shows only the data in the package and does not invent unavailable lane geometry. Road curves in schema 1 remain estimates, not confirmed game-road shapes.
 
 ## Testing
 

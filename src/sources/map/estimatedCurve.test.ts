@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sampleEstimatedMapCurve } from './estimatedCurve'
+import { sampleEstimatedMapCurve, writeEstimatedMapCurve } from './estimatedCurve'
 
 const node = (position: [number, number, number], rotation: [number, number, number, number]) => ({
   position,
@@ -52,5 +52,16 @@ describe('sampleEstimatedMapCurve', () => {
     expect(curve.points.map(({ point }) => point.y)).toEqual(
       [0, 0, 0].map((y) => expect.closeTo(y)),
     )
+  })
+
+  it('writes the same curve into a compact x/y buffer', () => {
+    const start = node([0, 0, 0], [1, 0, 0, 0])
+    const end = node([0, 0, -2560], [1, 0, 0, 0])
+    const packed = new Float32Array(12)
+    const count = writeEstimatedMapCurve(start, end, 10, packed, 2, 4)
+
+    expect(count).toBe(5)
+    expect(Array.from(packed.slice(2))).toEqual([0, 0, 0, 2.5, 0, 5, 0, 7.5, 0, 10])
+    expect(() => writeEstimatedMapCurve(start, end, 10, packed, 4, 4)).toThrow(/enough room/)
   })
 })

@@ -86,9 +86,15 @@ describe('parseRoadPilotMapPackageV1', () => {
     expect(result.game).toBe('ats')
     expect(result.schemaVersion).toEqual({ major: 1, minor: 0 })
     expect(result.roadCount).toBe(1)
-    expect(result.curves[0]).toMatchObject({ id: '03', lengthConsistent: true })
-    expect(result.curves[0]?.curve?.quality).toBe('estimated')
-    expect(result.curves[0]?.curve?.unit).toBe('map-world-unit')
+    expect(result.coordinateUnit).toBe('map-world-unit')
+    expect(result.curves[0]).toMatchObject({
+      id: '03',
+      quality: 'estimated',
+      coordinateOffset: 0,
+      pointCount: 33,
+      lengthConsistent: true,
+    })
+    expect(result.coordinates.length).toBe(66)
   })
 
   it('keeps unavailable curve geometry unavailable', () => {
@@ -116,10 +122,12 @@ describe('parseRoadPilotMapPackageV1', () => {
 
     const result = parseRoadPilotMapPackageV1(manifest, geometry)
     expect(result.curves[0]).toMatchObject({
-      curve: null,
+      quality: 'unavailable',
+      pointCount: 0,
       unavailableReason: 'invalid_direction',
       lengthConsistent: null,
     })
+    expect(result.coordinates.length).toBe(0)
   })
 
   it('rejects unsupported versions, damaged files, and incomplete geometry', () => {

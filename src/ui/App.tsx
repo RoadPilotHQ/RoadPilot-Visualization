@@ -5,6 +5,7 @@ import { ScenePanel } from './panels/ScenePanel'
 import { Sidebar } from './panels/Sidebar'
 import { TelemetryPanel } from './panels/TelemetryPanel'
 import { Topbar } from './panels/Topbar'
+import { MapPackagePanel } from './map/MapPackagePanel'
 
 export function App() {
   const frame = useScene((s) => s.frame)
@@ -31,6 +32,7 @@ export function App() {
               <ScenePanel />
               <InspectorPanel frame={frame} layers={layers} />
             </div>
+            <MapPackagePanel />
             <TelemetryPanel frame={frame} sourceKind={source.kind} />
           </>
         )}

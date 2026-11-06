@@ -1,11 +1,19 @@
 import { z } from 'zod'
-import type { EstimatedMapCurve, MapCurveNode } from './estimatedCurve'
-import { sampleEstimatedMapCurve } from './estimatedCurve'
+import type { RoadPilotMapPackageV1 } from '@/domain/mapPackage'
+import type { MapCurveNode } from './estimatedCurve'
+import { writeEstimatedMapCurve } from './estimatedCurve'
 
 const HEX_UID = /^[0-9a-f]+$/
 const FNV_OFFSET = 0xcbf29ce484222325n
 const FNV_PRIME = 0x100000001b3n
 const MASK_64 = 0xffffffffffffffffn
+const CURVE_SEGMENTS = 32
+const MAX_ROADS = 1_000_000
+
+export interface MapPackageFileIntegrity {
+  readonly bytes: number
+  readonly checksum: string
+}
 
 const fileSchema = z.object({
   name: z
@@ -44,7 +52,11 @@ const manifestSchema = z.object({
   }),
   geometry_models: z.object({
     node_position: z.literal('confirmed'),
-    curve: z.object({ model: z.literal('hermite_stored_length'), quality: z.literal('estimated') }),
+    curve: z.object({
+      model: z.literal('hermite_stored_length'),
+      quality: z.literal('estimated'),
+      length_tolerance: z.number().finite().nonnegative(),
+    }),
     lane_position: z.literal('unavailable'),
   }),
   counts: z.object({
@@ -110,26 +122,12 @@ const roadSchema = z.object({
   curve: z.discriminatedUnion('quality', [estimatedCurveSchema, unavailableCurveSchema]),
 })
 
-export interface MapRoadCurve {
-  readonly id: string
-  readonly curve: EstimatedMapCurve | null
-  readonly unavailableReason: string | null
-  readonly lengthConsistent: boolean | null
-}
-
-export interface RoadPilotMapPackageV1 {
-  readonly game: 'ats' | 'ets2'
-  readonly schemaVersion: { readonly major: 1; readonly minor: number }
-  readonly contentRevision: number
-  readonly roadCount: number
-  readonly curves: readonly MapRoadCurve[]
-}
-
 /** Parses and integrity-checks a schema 1 package for offline, read-only visualization. */
 export function parseRoadPilotMapPackageV1(
   manifestText: string,
   geometryText: string,
   additionalFiles: Readonly<Record<string, string>> = {},
+  verifiedFiles: Readonly<Record<string, MapPackageFileIntegrity>> = {},
 ): RoadPilotMapPackageV1 {
   const manifestValue = parseJson(manifestText, 'manifest.json')
   const manifest = manifestSchema.parse(manifestValue)
@@ -149,16 +147,23 @@ export function parseRoadPilotMapPackageV1(
     if (listedNames.has(file.name)) throw new Error(`manifest lists ${file.name} more than once`)
     listedNames.add(file.name)
     const contents = suppliedFiles[file.name]
-    if (contents === undefined) throw new Error(`package file ${file.name} is missing`)
-    const bytes = new TextEncoder().encode(contents)
-    const checksum = fnv64(bytes)
-    if (bytes.byteLength !== file.bytes)
+    const verified = verifiedFiles[file.name]
+    if (contents === undefined && verified === undefined) {
+      throw new Error(`package file ${file.name} is missing`)
+    }
+    const integrity =
+      verified ??
+      (() => {
+        const bytes = new TextEncoder().encode(contents!)
+        return { bytes: bytes.byteLength, checksum: fnv64(bytes) }
+      })()
+    if (integrity.bytes !== file.bytes)
       throw new Error(`package file ${file.name} has an unexpected byte length`)
-    if (checksum !== file.checksum)
+    if (integrity.checksum !== file.checksum)
       throw new Error(`package file ${file.name} checksum does not match`)
     contentId = fnvUpdate(
       contentId,
-      new TextEncoder().encode(`${file.name}:${file.bytes}:${checksum};`),
+      new TextEncoder().encode(`${file.name}:${file.bytes}:${integrity.checksum};`),
     )
   }
   if (contentId.toString(16) !== manifest.content_id)
@@ -181,18 +186,22 @@ export function parseRoadPilotMapPackageV1(
   return parseGeometry(
     geometryText,
     manifest.game,
+    manifest.source.map,
     manifest.schema_version.minor,
     manifest.content_revision,
     manifest.counts,
+    manifest.geometry_models.curve.length_tolerance,
   )
 }
 
 function parseGeometry(
   text: string,
   game: 'ats' | 'ets2',
+  mapName: string | null,
   packageMinor: number,
   contentRevision: number,
   packageCounts: z.infer<typeof manifestSchema>['counts'],
+  lengthTolerance: number,
 ): RoadPilotMapPackageV1 {
   let lineNumber = 0
   let offset = 0
@@ -205,7 +214,13 @@ function parseGeometry(
   let lastNodeId: bigint | null = null
   let lastRoadId: bigint | null = null
   const nodes = new Map<string, MapCurveNode>()
-  const curves: MapRoadCurve[] = []
+  const curves: RoadPilotMapPackageV1['curves'][number][] = []
+  let coordinates: Float32Array | null = null
+  let coordinateOffset = 0
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
   let footerSeen = false
 
   while (offset < text.length) {
@@ -245,6 +260,12 @@ function parseGeometry(
         ) {
           throw new Error(`geometry.jsonl line ${lineNumber}: counts do not match manifest`)
         }
+        if (header.counts.roads > MAX_ROADS) {
+          throw new Error(
+            `geometry.jsonl contains too many roads to visualize (${header.counts.roads})`,
+          )
+        }
+        coordinates = new Float32Array(header.counts.roads * (CURVE_SEGMENTS + 1) * 2)
         stage = 0
         break
       }
@@ -268,6 +289,20 @@ function parseGeometry(
         const road = roadSchema.parse(value)
         if (road.start === road.end)
           throw new Error(`geometry.jsonl line ${lineNumber}: road nodes must differ`)
+        if (road.curve.quality === 'estimated') {
+          const deviation =
+            Math.abs(road.curve.estimated_length - road.stored_length) / road.stored_length
+          if (Math.abs(deviation - road.curve.length_deviation) > 1e-9) {
+            throw new Error(
+              `geometry.jsonl line ${lineNumber}: curve length deviation is inconsistent`,
+            )
+          }
+          if (road.curve.length_consistent !== deviation <= lengthTolerance) {
+            throw new Error(
+              `geometry.jsonl line ${lineNumber}: curve length consistency claim is false`,
+            )
+          }
+        }
         const id = BigInt(`0x${road.id}`)
         if (lastRoadId !== null && id <= lastRoadId) {
           throw new Error(`geometry.jsonl line ${lineNumber}: road ids are not strictly ascending`)
@@ -280,19 +315,40 @@ function parseGeometry(
         if (road.curve.quality === 'unavailable') {
           curves.push({
             id: road.id,
-            curve: null,
+            quality: 'unavailable',
+            coordinateOffset,
+            pointCount: 0,
             unavailableReason: road.curve.reason,
             lengthConsistent: null,
           })
         } else {
+          const [minRoadX, , minRoadZ, maxRoadX, , maxRoadZ] = road.curve.bounds
+          if (minRoadX > maxRoadX || minRoadZ > maxRoadZ) {
+            throw new Error(`geometry.jsonl line ${lineNumber}: curve bounds are inverted`)
+          }
+          minX = Math.min(minX, minRoadX)
+          maxX = Math.max(maxX, maxRoadX)
+          minY = Math.min(minY, -maxRoadZ)
+          maxY = Math.max(maxY, -minRoadZ)
           try {
-            const curve = sampleEstimatedMapCurve(start, finish, road.curve.tangent_scale)
+            if (coordinates === null) throw new Error('geometry header is missing')
+            const pointCount = writeEstimatedMapCurve(
+              start,
+              finish,
+              road.curve.tangent_scale,
+              coordinates,
+              coordinateOffset,
+              CURVE_SEGMENTS,
+            )
             curves.push({
               id: road.id,
-              curve,
+              quality: 'estimated',
+              coordinateOffset,
+              pointCount,
               unavailableReason: null,
               lengthConsistent: road.curve.length_consistent,
             })
+            coordinateOffset += pointCount * 2
           } catch (error) {
             fail(error)
           }
@@ -339,9 +395,19 @@ function parseGeometry(
   if (!footerSeen) throw new Error('geometry.jsonl is missing its complete footer')
   return {
     game,
+    mapName,
     schemaVersion: { major: 1, minor: packageMinor },
     contentRevision,
     roadCount,
+    coordinateUnit: 'map-world-unit',
+    bounds:
+      Number.isFinite(minX) &&
+      Number.isFinite(minY) &&
+      Number.isFinite(maxX) &&
+      Number.isFinite(maxY)
+        ? { minX, minY, maxX, maxY }
+        : null,
+    coordinates: coordinates?.subarray(0, coordinateOffset) ?? new Float32Array(),
     curves,
   }
 }
