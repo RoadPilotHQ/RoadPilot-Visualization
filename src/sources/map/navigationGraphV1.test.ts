@@ -93,4 +93,18 @@ describe('parseNavigationGraphV1', () => {
       /missing node/,
     )
   })
+
+  it('builds a bounded topology sample only from positioned map-node endpoints', () => {
+    const positioned = graph().replace('"position":null', '"position":[512,0,512]')
+    const result = parseNavigationGraphV1(positioned)
+
+    expect(result.topology).toMatchObject({
+      sampleStride: 1,
+      sampledEdgeCount: 1,
+      bounds: { minX: 1, minY: 0, maxX: 2, maxY: 2 },
+    })
+    expect(Array.from(result.topology!.positions)).toEqual([1, 0, 2, 2])
+    expect(Array.from(result.topology!.edges)).toEqual([0, 1, 1])
+    expect(parseNavigationGraphV1(graph()).topology?.sampledEdgeCount).toBe(0)
+  })
 })

@@ -661,6 +661,60 @@ footer span {
   margin: 9px 0 0;
   line-height: 1.5;
 }
+.map-graph-view {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #343a32;
+  border-radius: 8px;
+  background: #20251f;
+}
+.map-graph-view-head,
+.map-graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  color: #b8c0b1;
+  font:
+    10px 'DM Mono',
+    monospace;
+}
+.map-graph-view-head {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.map-graph-viewport {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #343a32;
+  border-radius: 6px;
+}
+.map-graph-viewport .map-package-canvas {
+  height: 300px;
+  min-height: 220px;
+}
+.map-graph-legend {
+  margin-top: 9px;
+}
+.graph-edge-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.graph-edge-swatch.confirmed {
+  background: #65c7f2;
+}
+.graph-edge-swatch.candidate {
+  background: #e9a34c;
+}
+.graph-edge-swatch.unknown {
+  background: #c491f0;
+}
+.graph-edge-swatch.forbidden {
+  background: #e56c64;
+}
 .map-package-viewport {
   position: relative;
   margin-top: 8px;

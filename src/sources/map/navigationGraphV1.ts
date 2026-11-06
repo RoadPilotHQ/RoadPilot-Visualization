@@ -1,7 +1,10 @@
 import { z } from 'zod'
-import type { MapNavigationGraphSummary } from '@/domain/mapPackage'
+import type { MapNavigationGraph } from '@/domain/mapPackage'
 
 const MAX_LINE_LENGTH = 4 * 1024 * 1024
+const MAX_TOPOLOGY_NODES = 2_000_000
+const MAX_TOPOLOGY_EDGES = 50_000
+const EDGE_STATUS_CODE = { confirmed: 0, candidate: 1, unknown: 2, forbidden: 3 } as const
 const HEX_UID = /^[0-9a-f]{1,16}$/
 const safeCount = z.number().int().nonnegative().safe()
 const coordinate = z.number().int().safe()
@@ -85,6 +88,14 @@ export function createNavigationGraphV1Accumulator() {
   let positionedNodeCount = 0
   let missingPositionCount = 0
   let footerSeen = false
+  let nodePositions: Float64Array | null = null
+  let sampledEdges = new Uint32Array(0)
+  let sampledEdgeCount = 0
+  let sampleStride = 1
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
   const nodesByKind: Record<string, number> = {}
   const edgesByStatus: Record<string, number> = {}
   const edgesByCategory: Record<string, number> = {}
@@ -104,6 +115,12 @@ export function createNavigationGraphV1Accumulator() {
         throw new Error(
           `unsupported navigation schema major version ${header.schema_version.major}`,
         )
+      }
+      if (header.counts.nodes <= MAX_TOPOLOGY_NODES) {
+        nodePositions = new Float64Array(header.counts.nodes * 2)
+        nodePositions.fill(Number.NaN)
+        sampleStride = Math.max(1, Math.ceil(header.counts.edges / MAX_TOPOLOGY_EDGES))
+        sampledEdges = new Uint32Array(Math.min(MAX_TOPOLOGY_EDGES, header.counts.edges) * 3)
       }
       return
     }
@@ -126,7 +143,19 @@ export function createNavigationGraphV1Accumulator() {
         nodeCount += 1
         increment(nodesByKind, node.kind)
         if (node.position === null) missingPositionCount += 1
-        else positionedNodeCount += 1
+        else {
+          positionedNodeCount += 1
+          const x = node.position[0] / 256
+          const y = node.position[2] / 256
+          minX = Math.min(minX, x)
+          minY = Math.min(minY, y)
+          maxX = Math.max(maxX, x)
+          maxY = Math.max(maxY, y)
+          if (nodePositions) {
+            nodePositions[node.id * 2] = x
+            nodePositions[node.id * 2 + 1] = y
+          }
+        }
         break
       }
       case 'edge': {
@@ -142,6 +171,23 @@ export function createNavigationGraphV1Accumulator() {
         edgeCount += 1
         increment(edgesByStatus, edge.status)
         increment(edgesByCategory, edge.category)
+        if (nodePositions && edge.id % sampleStride === 0) {
+          const fromOffset = edge.from * 2
+          const toOffset = edge.to * 2
+          if (
+            Number.isFinite(nodePositions[fromOffset]) &&
+            Number.isFinite(nodePositions[fromOffset + 1]) &&
+            Number.isFinite(nodePositions[toOffset]) &&
+            Number.isFinite(nodePositions[toOffset + 1]) &&
+            sampledEdgeCount * 3 < sampledEdges.length
+          ) {
+            const edgeOffset = sampledEdgeCount * 3
+            sampledEdges[edgeOffset] = edge.from
+            sampledEdges[edgeOffset + 1] = edge.to
+            sampledEdges[edgeOffset + 2] = EDGE_STATUS_CODE[edge.status]
+            sampledEdgeCount += 1
+          }
+        }
         break
       }
       case 'issue': {
@@ -174,9 +220,10 @@ export function createNavigationGraphV1Accumulator() {
 
   return {
     push,
-    finish(): MapNavigationGraphSummary {
+    finish(): MapNavigationGraph {
       if (!header) throw new Error('navigation.jsonl is missing its header')
       if (!footerSeen) throw new Error('navigation.jsonl is missing its complete footer')
+      const bounds = Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null
       return {
         schemaVersion: { major: 1, minor: header.schema_version.minor },
         nodeCount,
@@ -189,13 +236,22 @@ export function createNavigationGraphV1Accumulator() {
         edgesByStatus,
         edgesByCategory,
         issuesByKind,
+        topology: nodePositions
+          ? {
+              positions: nodePositions,
+              edges: sampledEdges.subarray(0, sampledEdgeCount * 3),
+              sampleStride,
+              sampledEdgeCount,
+              bounds,
+            }
+          : null,
       }
     },
   }
 }
 
 /** Parses a complete string for tests; production uses the streaming worker path. */
-export function parseNavigationGraphV1(text: string): MapNavigationGraphSummary {
+export function parseNavigationGraphV1(text: string): MapNavigationGraph {
   const parser = createNavigationGraphV1Accumulator()
   const lines = text.split('\n')
   if (lines.at(-1) === '') lines.pop()

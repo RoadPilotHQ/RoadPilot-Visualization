@@ -29,7 +29,7 @@ export interface RoadPilotMapPackageV1 {
   readonly coordinates: Float32Array
   readonly curves: readonly MapRoadCurve[]
   readonly spatialIndex: MapCurveSpatialIndex
-  readonly navigationGraph: MapNavigationGraphSummary | null
+  readonly navigationGraph: MapNavigationGraph | null
 }
 
 export interface MapCurveSpatialIndex {
@@ -50,4 +50,18 @@ export interface MapNavigationGraphSummary {
   readonly edgesByStatus: Readonly<Record<string, number>>
   readonly edgesByCategory: Readonly<Record<string, number>>
   readonly issuesByKind: Readonly<Record<string, number>>
+}
+
+export interface MapNavigationGraph extends MapNavigationGraphSummary {
+  readonly topology: MapNavigationTopology | null
+}
+
+export interface MapNavigationTopology {
+  /** Packed x/z map-world coordinate pairs for graph nodes; missing positions are NaN. */
+  readonly positions: Float64Array
+  /** Packed from/to/status-code triples for a deterministic edge sample. */
+  readonly edges: Uint32Array
+  readonly sampleStride: number
+  readonly sampledEdgeCount: number
+  readonly bounds: MapPackageBounds | null
 }

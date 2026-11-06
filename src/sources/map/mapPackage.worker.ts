@@ -49,7 +49,14 @@ async function load(request: MapPackageLoadRequest) {
     const parsed = parseRoadPilotMapPackageV1(manifestText, geometryText!, {}, verifiedFiles)
     const navigationGraph = navigationRead ? (await navigationRead).summary : null
     const data: RoadPilotMapPackageV1 = { ...parsed, navigationGraph }
-    workerScope.postMessage({ type: 'loaded', data }, [data.coordinates.buffer as ArrayBuffer])
+    const transfer: Transferable[] = [data.coordinates.buffer as ArrayBuffer]
+    if (data.navigationGraph?.topology) {
+      transfer.push(
+        data.navigationGraph.topology.positions.buffer as ArrayBuffer,
+        data.navigationGraph.topology.edges.buffer as ArrayBuffer,
+      )
+    }
+    workerScope.postMessage({ type: 'loaded', data }, transfer)
   } catch (error) {
     workerScope.postMessage({
       type: 'error',

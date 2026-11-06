@@ -121,6 +121,7 @@ export function MapPackagePanel() {
             )}
           </div>
           <NavigationGraphSummary graph={data.navigationGraph} />
+          {data.navigationGraph && <NavigationGraphCanvas graph={data.navigationGraph} />}
           <MapPackageCanvas key={loadGeneration} data={data} />
           <div className="map-package-legend">
             <span>
@@ -222,6 +223,191 @@ function GraphListGroup({ title, items }: { title: string; items: readonly strin
             <span key={item}>{item}</span>
           ))}
       </div>
+    </div>
+  )
+}
+
+function NavigationGraphCanvas({
+  graph,
+}: {
+  graph: NonNullable<RoadPilotMapPackageV1['navigationGraph']>
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const dragRef = useRef<{
+    pointerId: number
+    x: number
+    y: number
+    panX: number
+    panY: number
+  } | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    const topology = graph.topology
+    const draw = () => {
+      const rect = canvas.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return
+      const ratio = window.devicePixelRatio || 1
+      canvas.width = Math.max(1, Math.round(rect.width * ratio))
+      canvas.height = Math.max(1, Math.round(rect.height * ratio))
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
+      ctx.fillStyle = '#1d211d'
+      ctx.fillRect(0, 0, rect.width, rect.height)
+      if (!topology?.bounds || topology.sampledEdgeCount === 0) {
+        ctx.fillStyle = '#9ba493'
+        ctx.font = '12px "DM Sans", sans-serif'
+        ctx.fillText(
+          topology
+            ? 'No sampled edges have positioned endpoints.'
+            : 'Topology sample unavailable for this graph size.',
+          16,
+          28,
+        )
+        return
+      }
+      const { minX, minY, maxX, maxY } = topology.bounds
+      const width = Math.max(maxX - minX, 1)
+      const height = Math.max(maxY - minY, 1)
+      const fit = Math.min((rect.width - 32) / width, (rect.height - 32) / height)
+      const scale = Math.max(fit * zoom, 0.000001)
+      const centerX = (minX + maxX) / 2
+      const centerY = (minY + maxY) / 2
+      const screenX = (x: number) => rect.width / 2 + pan.x + (x - centerX) * scale
+      const screenY = (y: number) => rect.height / 2 + pan.y + (y - centerY) * scale
+      const colors = ['#65c7f2', '#e9a34c', '#c491f0', '#e56c64']
+      ctx.lineWidth = Math.max(0.55, Math.min(1.4, scale * 0.06))
+      ctx.globalAlpha = 0.68
+      for (let status = 0; status < colors.length; status += 1) {
+        ctx.beginPath()
+        for (let index = 0; index < topology.edges.length; index += 3) {
+          if (topology.edges[index + 2] !== status) continue
+          const from = topology.edges[index]! * 2
+          const to = topology.edges[index + 1]! * 2
+          ctx.moveTo(screenX(topology.positions[from]!), screenY(topology.positions[from + 1]!))
+          ctx.lineTo(screenX(topology.positions[to]!), screenY(topology.positions[to + 1]!))
+        }
+        ctx.strokeStyle = colors[status]!
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+      ctx.fillStyle = '#9ba493'
+      ctx.font = '10px "DM Mono", monospace'
+      ctx.fillText(
+        `SCHEMATIC TOPOLOGY · MAP UNITS UNCONFIRMED · ${zoom.toFixed(1)}×`,
+        12,
+        rect.height - 10,
+      )
+    }
+    let frame: number | null = null
+    const scheduleDraw = () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        frame = null
+        draw()
+      })
+    }
+    const observer = new ResizeObserver(scheduleDraw)
+    observer.observe(canvas)
+    scheduleDraw()
+    return () => {
+      observer.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [graph, pan, zoom])
+
+  const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    }
+  }
+  const onPointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current
+    if (drag?.pointerId === event.pointerId) {
+      setPan({ x: drag.panX + event.clientX - drag.x, y: drag.panY + event.clientY - drag.y })
+    }
+  }
+  const endDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
+  }
+
+  return (
+    <div className="map-graph-view" aria-label="Navigation graph topology view">
+      <div className="map-graph-view-head">
+        <strong>Sampled graph topology</strong>
+        {graph.topology && (
+          <span>
+            {graph.topology.sampledEdgeCount.toLocaleString()} of {graph.edgeCount.toLocaleString()}{' '}
+            edges
+          </span>
+        )}
+      </div>
+      <div className="map-graph-viewport">
+        <canvas
+          ref={canvasRef}
+          className="map-package-canvas"
+          role="img"
+          aria-label="Sampled navigation graph topology from map-node positions; not lane geometry or a drivable route. Drag to pan and scroll to zoom."
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onWheel={(event: WheelEvent<HTMLCanvasElement>) => {
+            event.preventDefault()
+            setZoom((current) =>
+              Math.max(0.25, Math.min(128, current * Math.exp(-event.deltaY * 0.001))),
+            )
+          }}
+        />
+        <div className="map-package-controls" role="toolbar" aria-label="Graph map controls">
+          <button type="button" onClick={() => setZoom((current) => Math.min(128, current * 1.5))}>
+            +
+          </button>
+          <button type="button" onClick={() => setZoom((current) => Math.max(0.25, current / 1.5))}>
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setZoom(1)
+              setPan({ x: 0, y: 0 })
+            }}
+          >
+            Fit
+          </button>
+        </div>
+      </div>
+      <div className="map-graph-legend">
+        <span>
+          <i className="graph-edge-swatch confirmed" />
+          Confirmed
+        </span>
+        <span>
+          <i className="graph-edge-swatch candidate" />
+          Candidate
+        </span>
+        <span>
+          <i className="graph-edge-swatch unknown" />
+          Unknown
+        </span>
+        <span>
+          <i className="graph-edge-swatch forbidden" />
+          Forbidden
+        </span>
+      </div>
+      <p className="map-graph-limitations">
+        Schematic sample of connections between map-node positions. Lines are not lane geometry,
+        validated routes, or drivable-road shapes. Map units are unconfirmed.
+      </p>
     </div>
   )
 }
