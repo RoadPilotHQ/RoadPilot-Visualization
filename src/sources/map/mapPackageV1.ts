@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { RoadPilotMapPackageV1 } from '@/domain/mapPackage'
+import { buildMapCurveSpatialIndex } from '@/domain/mapSpatialIndex'
 import type { MapCurveNode } from './estimatedCurve'
 import { writeEstimatedMapCurve } from './estimatedCurve'
 
@@ -191,6 +192,7 @@ export function parseRoadPilotMapPackageV1(
     manifest.content_revision,
     manifest.counts,
     manifest.geometry_models.curve.length_tolerance,
+    manifest.spatial_index.cell_size,
   )
 }
 
@@ -202,6 +204,7 @@ function parseGeometry(
   contentRevision: number,
   packageCounts: z.infer<typeof manifestSchema>['counts'],
   lengthTolerance: number,
+  cellSize: number,
 ): RoadPilotMapPackageV1 {
   let lineNumber = 0
   let offset = 0
@@ -318,18 +321,34 @@ function parseGeometry(
             quality: 'unavailable',
             coordinateOffset,
             pointCount: 0,
+            bounds: null,
             unavailableReason: road.curve.reason,
             lengthConsistent: null,
           })
         } else {
-          const [minRoadX, , minRoadZ, maxRoadX, , maxRoadZ] = road.curve.bounds
-          if (minRoadX > maxRoadX || minRoadZ > maxRoadZ) {
-            throw new Error(`geometry.jsonl line ${lineNumber}: curve bounds are inverted`)
+          const [minRoadX, minRoadY, minRoadZ, maxRoadX, maxRoadY, maxRoadZ] = road.curve.bounds
+          if (
+            minRoadX > maxRoadX ||
+            minRoadY > maxRoadY ||
+            minRoadZ > maxRoadZ ||
+            maxRoadX - minRoadX >= 10_000 ||
+            maxRoadY - minRoadY >= 10_000 ||
+            maxRoadZ - minRoadZ >= 10_000
+          ) {
+            throw new Error(`geometry.jsonl line ${lineNumber}: curve bounds are invalid`)
           }
           minX = Math.min(minX, minRoadX)
           maxX = Math.max(maxX, maxRoadX)
-          minY = Math.min(minY, -maxRoadZ)
-          maxY = Math.max(maxY, -minRoadZ)
+          const minPlaneY = -maxRoadZ + 0
+          const maxPlaneY = -minRoadZ + 0
+          minY = Math.min(minY, minPlaneY)
+          maxY = Math.max(maxY, maxPlaneY)
+          const bounds = {
+            minX: minRoadX,
+            minY: minPlaneY,
+            maxX: maxRoadX,
+            maxY: maxPlaneY,
+          }
           try {
             if (coordinates === null) throw new Error('geometry header is missing')
             const pointCount = writeEstimatedMapCurve(
@@ -345,6 +364,7 @@ function parseGeometry(
               quality: 'estimated',
               coordinateOffset,
               pointCount,
+              bounds,
               unavailableReason: null,
               lengthConsistent: road.curve.length_consistent,
             })
@@ -409,6 +429,7 @@ function parseGeometry(
         : null,
     coordinates: coordinates?.subarray(0, coordinateOffset) ?? new Float32Array(),
     curves,
+    spatialIndex: buildMapCurveSpatialIndex(curves, cellSize),
   }
 }
 

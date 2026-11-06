@@ -5,6 +5,7 @@ export interface MapRoadCurve {
   /** Offset into `coordinates`, in Float32 values (x/y pairs). */
   readonly coordinateOffset: number
   readonly pointCount: number
+  readonly bounds: MapPackageBounds | null
   readonly unavailableReason: string | null
   readonly lengthConsistent: boolean | null
 }
@@ -27,4 +28,11 @@ export interface RoadPilotMapPackageV1 {
   /** Packed scene-plane x/y pairs, separate from metre-based simulation frames. */
   readonly coordinates: Float32Array
   readonly curves: readonly MapRoadCurve[]
+  readonly spatialIndex: MapCurveSpatialIndex
+}
+
+export interface MapCurveSpatialIndex {
+  readonly cellSize: number
+  readonly cells: Readonly<Record<string, readonly number[]>>
+  readonly overflowCurveIndices: readonly number[]
 }

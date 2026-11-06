@@ -39,9 +39,9 @@ It is a separate repository and a separate application. It is a **read-only** vi
 | State (Zustand)                                                  | Latest frame, source status, playback state, layer toggles                                                        |
 | `roadpilot-visualization-frame` v1                               | Wire contract with validation and serialization, see [`docs/contracts`](docs/contracts/visualization-frame-v1.md) |
 | 2D renderer                                                      | Canvas 2D with pan, zoom, ego-follow and seven independent layers; drawing runs outside React                     |
-| RoadPilot-Map package                                            | Local schema 1 validation in a worker; separate offline view of estimated curves and unavailable data             |
+| RoadPilot-Map package                                            | Local schema 1 validation and spatial grid in a worker; separate offline view of estimated curves                 |
 
-Not implemented yet: scenario library, session recording and replay, graph overlay, spatial index, live connection to RoadPilot, 3D rendering, Tauri packaging.
+Not implemented yet: scenario library, session recording and replay, navigation graph overlay, live connection to RoadPilot, 3D rendering, Tauri packaging.
 
 ## Requirements
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { queryMapCurveSpatialIndex } from '@/domain/mapSpatialIndex'
 import { parseRoadPilotMapPackageV1 } from './mapPackageV1'
 
 const geometryOf = (records: unknown[]) =>
@@ -33,7 +34,7 @@ const fixture = (
         estimated_length: 10,
         length_deviation: 0,
         length_consistent: true,
-        bounds: [0, 0, -2560, 0, 0, 0],
+        bounds: [0, 0, -10, 0, 0, 0],
       },
     },
     { t: 'footer', complete: true, nodes: 2, roads: 1, junctions: 0, connections: 0 },
@@ -95,6 +96,23 @@ describe('parseRoadPilotMapPackageV1', () => {
       lengthConsistent: true,
     })
     expect(result.coordinates.length).toBe(66)
+    expect(result.bounds).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 10 })
+    expect(
+      queryMapCurveSpatialIndex(result.spatialIndex, {
+        minX: -1,
+        minY: 2,
+        maxX: 1,
+        maxY: 8,
+      }),
+    ).toEqual([0])
+    expect(
+      queryMapCurveSpatialIndex(result.spatialIndex, {
+        minX: 300,
+        minY: 2,
+        maxX: 301,
+        maxY: 8,
+      }),
+    ).toEqual([])
   })
 
   it('keeps unavailable curve geometry unavailable', () => {

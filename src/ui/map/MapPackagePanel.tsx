@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, PointerEvent, WheelEvent } from 'react'
 import type { RoadPilotMapPackageV1 } from '@/domain/mapPackage'
+import { queryMapCurveSpatialIndex } from '@/domain/mapSpatialIndex'
 
 type MapPackageWorkerResponse =
   | { readonly type: 'loaded'; readonly data: RoadPilotMapPackageV1 }
@@ -178,13 +179,21 @@ function MapPackageCanvas({ data }: { data: RoadPilotMapPackageV1 }) {
       const centerY = (data.bounds.minY + data.bounds.maxY) / 2
       const screenX = (x: number) => rect.width / 2 + pan.x + (x - centerX) * scale
       const screenY = (y: number) => rect.height / 2 + pan.y + (y - centerY) * scale
+      const viewport = {
+        minX: centerX + (-rect.width / 2 - pan.x) / scale,
+        minY: centerY + (-rect.height / 2 - pan.y) / scale,
+        maxX: centerX + (rect.width / 2 - pan.x) / scale,
+        maxY: centerY + (rect.height / 2 - pan.y) / scale,
+      }
+      const visibleCurveIndices = queryMapCurveSpatialIndex(data.spatialIndex, viewport)
 
       ctx.globalAlpha = 0.72
       ctx.lineWidth = Math.max(0.45, Math.min(1.5, scale * 0.08))
       const stride = scale < 0.2 ? 4 : scale < 1 ? 2 : 1
       for (const inconsistent of [false, true]) {
         ctx.beginPath()
-        for (const curve of data.curves) {
+        for (const curveIndex of visibleCurveIndices) {
+          const curve = data.curves[curveIndex]!
           if (
             curve.quality !== 'estimated' ||
             curve.pointCount < 2 ||
