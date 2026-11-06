@@ -43,7 +43,12 @@ export function clampZoom(pixelsPerMetre: number): number {
 export function resolveCamera(view: ViewState, ego: EgoState | null, viewport: Viewport): Camera {
   const anchor = anchorFor(viewport)
   const pixelsPerMetre = clampZoom(view.pixelsPerMetre)
-  if (view.mode === 'follow' && ego !== null) {
+  if (
+    view.mode === 'follow' &&
+    ego?.position !== null &&
+    ego?.position !== undefined &&
+    ego.headingRad !== null
+  ) {
     return { center: ego.position, headingRad: ego.headingRad, pixelsPerMetre, anchor }
   }
   return { center: view.center, headingRad: view.headingRad, pixelsPerMetre, anchor }

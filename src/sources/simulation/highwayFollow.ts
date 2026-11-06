@@ -2,6 +2,7 @@ import { kmhToMps } from '@/domain/coordinates'
 import type { Vec2 } from '@/domain/geometry'
 import type {
   Agent,
+  CompleteEgoState,
   Lane,
   SceneFrame,
   SignalState,
@@ -141,7 +142,9 @@ function statusFor(signals: readonly TrafficSignal[], sEgo: number): StatusEntry
 }
 
 /** Samples the scenario at `timeS`. Pure and deterministic. */
-export function sampleHighwayFollow(timeS: number): Omit<SceneFrame, 'sequence' | 'sourceId'> {
+export function sampleHighwayFollow(
+  timeS: number,
+): Omit<SceneFrame, 'sequence' | 'sourceId' | 'ego'> & { readonly ego: CompleteEgoState } {
   const t = timeS
   const sEgo = egoArcLength(t)
   const vEgo = egoSpeed(t)

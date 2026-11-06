@@ -8,13 +8,24 @@
 import type { Vec2 } from './geometry'
 
 export interface EgoState {
+  readonly position: Vec2 | null
+  /** Radians counter-clockwise from +x (east), when reported. */
+  readonly headingRad: number | null
+  readonly speedMps: number | null
+  /** Observed road-wheel angle, radians, positive = left. */
+  readonly steeringAngleRad: number | null
+  /** Signed path curvature in 1/m, positive = left. */
+  readonly curvaturePerM: number | null
+  readonly lengthM: number | null
+  readonly widthM: number | null
+}
+
+/** Fully populated ego state used by deterministic simulation frames. */
+export interface CompleteEgoState extends EgoState {
   readonly position: Vec2
-  /** Radians counter-clockwise from +x (east). */
   readonly headingRad: number
   readonly speedMps: number
-  /** Observed road-wheel angle, radians, positive = left. */
   readonly steeringAngleRad: number
-  /** Signed path curvature in 1/m, positive = left. */
   readonly curvaturePerM: number
   readonly lengthM: number
   readonly widthM: number
@@ -75,11 +86,11 @@ export interface AccInfo {
 /** Observed vehicle inputs. These are readings, never commands. */
 export interface VehicleInputs {
   /** Normalized steering input; positive = left, matching `steeringAngleRad`. */
-  readonly steering: number
+  readonly steering: number | null
   /** 0 to 1 */
-  readonly throttle: number
+  readonly throttle: number | null
   /** 0 to 1 */
-  readonly brake: number
+  readonly brake: number | null
 }
 
 export type StatusLevel = 'active' | 'idle' | 'waiting' | 'fault' | 'unknown'

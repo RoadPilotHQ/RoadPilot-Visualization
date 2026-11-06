@@ -23,6 +23,7 @@ import type { Vec2 } from '@/domain/geometry'
 export const FRAME_FORMAT = 'roadpilot-visualization-frame'
 export const FRAME_SCHEMA_MAJOR = 1
 export const FRAME_SCHEMA_MINOR = 0
+export const FRAME_SCHEMA_V2_MAJOR = 2
 
 /** Builds a schema that maps unknown strings to a fallback value. */
 function lenientEnum<const T extends readonly string[]>(values: T, fallback: T[number]) {
@@ -137,7 +138,132 @@ const frameSchema = z.object({
   status: z.array(statusSchema).default([]),
 })
 
+const optionalPoint = point.nullable()
+const optionalPositiveNumber = z.number().positive().nullable()
+const optionalFiniteNumber = z.number().nullable()
+
+const frameV2Schema = z.object({
+  format: z.literal(FRAME_FORMAT),
+  schema_version: versionSchema,
+  source: z.object({ id: z.string().min(1) }),
+  sequence: z.number().int().nonnegative(),
+  timestamp_s: z.number(),
+  ego: z.object({
+    position: optionalPoint,
+    heading_rad: optionalFiniteNumber,
+    speed_mps: optionalFiniteNumber,
+    steering_angle_rad: optionalFiniteNumber,
+    curvature_per_m: optionalFiniteNumber,
+    length_m: optionalPositiveNumber,
+    width_m: optionalPositiveNumber,
+  }),
+  agents: z.array(agentSchema).default([]),
+  signals: z.array(signalSchema).default([]),
+  lanes: z.array(laneSchema).default([]),
+  trajectory: trajectorySchema.nullish().transform((v) => v ?? null),
+  acc: accSchema.nullish().transform((v) => v ?? null),
+  inputs: z
+    .object({
+      steering: optionalFiniteNumber,
+      throttle: optionalFiniteNumber,
+      brake: optionalFiniteNumber,
+    })
+    .nullish()
+    .transform((v) => v ?? null),
+  status: z.array(statusSchema).default([]),
+})
+
 export type ParseResult = { ok: true; frame: SceneFrame } | { ok: false; error: string }
+
+/** Validates either supported major version, including v2's explicitly nullable readings. */
+export function parseFrame(input: unknown): ParseResult {
+  const header = headerSchema.safeParse(input)
+  if (!header.success) return parseFrameV1(input)
+  if (header.data.schema_version.major === FRAME_SCHEMA_V2_MAJOR) return parseFrameV2(input)
+  return parseFrameV1(input)
+}
+
+/** Validates schema 2, where game telemetry may legitimately omit spatial readings. */
+export function parseFrameV2(input: unknown): ParseResult {
+  const header = headerSchema.safeParse(input)
+  if (header.success && header.data.schema_version.major !== FRAME_SCHEMA_V2_MAJOR) {
+    return {
+      ok: false,
+      error: `Unsupported schema major version ${header.data.schema_version.major} (supported: ${FRAME_SCHEMA_V2_MAJOR})`,
+    }
+  }
+  const result = frameV2Schema.safeParse(input)
+  if (!result.success) {
+    const issue = result.error.issues[0]
+    const path = issue && issue.path.length > 0 ? `${issue.path.join('.')}: ` : ''
+    return { ok: false, error: `Invalid frame: ${path}${issue?.message ?? 'unknown error'}` }
+  }
+  const w = result.data
+  return {
+    ok: true,
+    frame: {
+      sequence: w.sequence,
+      timestampS: w.timestamp_s,
+      sourceId: w.source.id,
+      ego: {
+        position: w.ego.position,
+        headingRad: w.ego.heading_rad,
+        speedMps: w.ego.speed_mps,
+        steeringAngleRad: w.ego.steering_angle_rad,
+        curvaturePerM: w.ego.curvature_per_m,
+        lengthM: w.ego.length_m,
+        widthM: w.ego.width_m,
+      },
+      agents: w.agents.map((a): Agent => ({
+        id: a.id,
+        kind: a.kind as AgentKind,
+        position: a.position,
+        headingRad: a.heading_rad,
+        speedMps: a.speed_mps,
+        lengthM: a.length_m,
+        widthM: a.width_m,
+      })),
+      signals: w.signals.map((s) => ({
+        id: s.id,
+        position: s.position,
+        state: s.state as SignalState,
+        remainingS: s.remaining_s,
+      })),
+      lanes: w.lanes.map((l): Lane => ({
+        id: l.id,
+        centerline: l.centerline,
+        leftBoundary: l.left_boundary,
+        rightBoundary: l.right_boundary,
+      })),
+      trajectory: w.trajectory
+        ? {
+            points: w.trajectory.points.map((p) => ({
+              position: { x: p.x, y: p.y },
+              speedMps: p.speed_mps,
+              curvaturePerM: p.curvature_per_m,
+            })),
+          }
+        : null,
+      acc: w.acc
+        ? {
+            state: w.acc.state as AccState,
+            setSpeedMps: w.acc.set_speed_mps,
+            targetSpeedMps: w.acc.target_speed_mps,
+            targetGapS: w.acc.target_gap_s,
+            leadObjectId: w.acc.lead_object_id,
+            leadDistanceM: w.acc.lead_distance_m,
+          }
+        : null,
+      inputs: w.inputs,
+      status: w.status.map((s) => ({
+        id: s.id,
+        label: s.label,
+        state: s.state as StatusLevel,
+        text: s.text,
+      })),
+    },
+  }
+}
 
 /** Validates untrusted input and converts it into the domain model. Never throws. */
 export function parseFrameV1(input: unknown): ParseResult {
@@ -224,6 +350,11 @@ export function parseFrameV1(input: unknown): ParseResult {
 }
 
 const toPoint = (p: Vec2) => ({ x: p.x, y: p.y })
+const requiredV1 = <T>(value: T | null, field: string): T => {
+  if (value === null)
+    throw new Error(`Cannot serialize schema 2 unavailable value as schema 1: ${field}`)
+  return value
+}
 
 /** Serializes a frame to the wire format, e.g. for recording sessions for later replay. */
 export function serializeFrameV1(frame: SceneFrame): Record<string, unknown> {
@@ -234,13 +365,13 @@ export function serializeFrameV1(frame: SceneFrame): Record<string, unknown> {
     sequence: frame.sequence,
     timestamp_s: frame.timestampS,
     ego: {
-      position: toPoint(frame.ego.position),
-      heading_rad: frame.ego.headingRad,
-      speed_mps: frame.ego.speedMps,
-      steering_angle_rad: frame.ego.steeringAngleRad,
-      curvature_per_m: frame.ego.curvaturePerM,
-      length_m: frame.ego.lengthM,
-      width_m: frame.ego.widthM,
+      position: toPoint(requiredV1(frame.ego.position, 'ego.position')),
+      heading_rad: requiredV1(frame.ego.headingRad, 'ego.headingRad'),
+      speed_mps: requiredV1(frame.ego.speedMps, 'ego.speedMps'),
+      steering_angle_rad: requiredV1(frame.ego.steeringAngleRad, 'ego.steeringAngleRad'),
+      curvature_per_m: requiredV1(frame.ego.curvaturePerM, 'ego.curvaturePerM'),
+      length_m: requiredV1(frame.ego.lengthM, 'ego.lengthM'),
+      width_m: requiredV1(frame.ego.widthM, 'ego.widthM'),
     },
     agents: frame.agents.map((a) => ({
       id: a.id,
@@ -285,7 +416,13 @@ export function serializeFrameV1(frame: SceneFrame): Record<string, unknown> {
             lead_object_id: frame.acc.leadObjectId,
             lead_distance_m: frame.acc.leadDistanceM,
           },
-    inputs: frame.inputs,
+    inputs:
+      frame.inputs === null ||
+      frame.inputs.steering === null ||
+      frame.inputs.throttle === null ||
+      frame.inputs.brake === null
+        ? null
+        : frame.inputs,
     status: frame.status.map((s) => ({ id: s.id, label: s.label, state: s.state, text: s.text })),
   }
 }

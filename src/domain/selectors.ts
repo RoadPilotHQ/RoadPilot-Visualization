@@ -5,13 +5,15 @@ import { polylineLength, projectOnPolyline } from './geometry'
 import type { PolylineProjection } from './geometry'
 import type { Agent, SceneFrame } from './scene'
 
-export const egoSpeedKmh = (frame: SceneFrame): number => mpsToKmh(frame.ego.speedMps)
+export const egoSpeedKmh = (frame: SceneFrame): number | null =>
+  frame.ego.speedMps === null ? null : mpsToKmh(frame.ego.speedMps)
 
 /**
  * Signed lateral offset of the ego vehicle from the centre line of the nearest lane, in metres
  * (positive = left of the lane centre). Null when no lane is available.
  */
 export function laneOffsetM(frame: SceneFrame): number | null {
+  if (frame.ego.position === null) return null
   let best: PolylineProjection | null = null
   for (const lane of frame.lanes) {
     const projection = projectOnPolyline(lane.centerline, frame.ego.position)

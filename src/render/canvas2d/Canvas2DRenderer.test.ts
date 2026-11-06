@@ -106,6 +106,33 @@ const assigned = (calls: readonly Call[], property: string): unknown[] =>
 const count = (calls: readonly Call[], name: string) => calls.filter((c) => c.name === name).length
 
 describe('Canvas2DRenderer', () => {
+  it('renders sparse live frames without inventing position or dimensions', () => {
+    const sparseFrame: SceneFrame = {
+      ...frame,
+      agents: [],
+      signals: [],
+      lanes: [],
+      trajectory: null,
+      ego: {
+        position: null,
+        headingRad: null,
+        speedMps: 4,
+        steeringAngleRad: null,
+        curvaturePerM: null,
+        lengthM: null,
+        widthM: null,
+      },
+    }
+    const { calls } = draw({ frame: sparseFrame })
+    expect(count(calls, 'arc')).toBe(0)
+    expect(
+      calls.some((call) => call.name === 'fillText' && call.args[0] === 'POSITION UNAVAILABLE'),
+    ).toBe(true)
+    expect(
+      calls.some((call) => call.name === 'fillText' && call.args[0] === 'HEADING UNAVAILABLE'),
+    ).toBe(true)
+  })
+
   it('sizes the backing store by the device pixel ratio and scales the context', () => {
     const { calls, surface } = draw()
     expect(surface).toEqual({ width: 1600, height: 1000 })

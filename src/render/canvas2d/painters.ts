@@ -330,19 +330,30 @@ const ego: Painter = {
   paint(ctx, { frame, camera }) {
     if (frame === null) return
     const { ego: vehicle } = frame
+    if (vehicle.position === null) return
     const p = worldToScreen(camera, vehicle.position)
-    const widthPx = vehicle.widthM * camera.pixelsPerMetre
-    const lengthPx = vehicle.lengthM * camera.pixelsPerMetre
     ctx.save()
     ctx.translate(p.x, p.y)
-    ctx.rotate((screenRotationDeg(camera, vehicle.headingRad) * Math.PI) / 180)
-    drawVehicleBody(ctx, widthPx, lengthPx, COLORS.egoFill, COLORS.egoStroke, 3)
-    drawWindscreen(ctx, widthPx, lengthPx)
-    ctx.fillStyle = COLORS.headlight
-    for (const side of [-1, 1]) {
+    if (vehicle.headingRad !== null && vehicle.lengthM !== null && vehicle.widthM !== null) {
+      const widthPx = vehicle.widthM * camera.pixelsPerMetre
+      const lengthPx = vehicle.lengthM * camera.pixelsPerMetre
+      ctx.rotate((screenRotationDeg(camera, vehicle.headingRad) * Math.PI) / 180)
+      drawVehicleBody(ctx, widthPx, lengthPx, COLORS.egoFill, COLORS.egoStroke, 3)
+      drawWindscreen(ctx, widthPx, lengthPx)
+      ctx.fillStyle = COLORS.headlight
+      for (const side of [-1, 1]) {
+        ctx.beginPath()
+        ctx.arc(side * widthPx * 0.36, -lengthPx / 2 + 3, 2.5, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    } else {
+      ctx.fillStyle = COLORS.egoFill
+      ctx.strokeStyle = COLORS.egoStroke
+      ctx.lineWidth = 2
       ctx.beginPath()
-      ctx.arc(side * widthPx * 0.36, -lengthPx / 2 + 3, 2.5, 0, Math.PI * 2)
+      ctx.arc(0, 0, 5, 0, Math.PI * 2)
       ctx.fill()
+      ctx.stroke()
     }
     ctx.restore()
   },
@@ -359,21 +370,35 @@ const labels: Painter = {
     ctx.fillText(sceneLabel, 24, 30)
     if (frame === null) return
     const { ego: vehicle } = frame
-    ctx.fillText(
-      `SCENE X ${vehicle.position.x.toFixed(1)} · Y ${vehicle.position.y.toFixed(1)}`,
-      24,
-      49,
-    )
-    ctx.fillText(
-      `HEADING ${headingToCompassDeg(vehicle.headingRad).toFixed(1).padStart(5, '0')}°`,
-      24,
-      68,
-    )
-    ctx.font = '700 13px "DM Sans", sans-serif'
-    const egoScreen = worldToScreen(camera, vehicle.position)
-    const halfWidth = (vehicle.widthM * camera.pixelsPerMetre) / 2
-    ctx.fillStyle = COLORS.egoLabel
-    ctx.fillText('EGO VEHICLE', egoScreen.x + Math.max(halfWidth, 8) + 14, egoScreen.y + 5)
+    if (vehicle.position !== null) {
+      ctx.fillText(
+        `SCENE X ${vehicle.position.x.toFixed(1)} · Y ${vehicle.position.y.toFixed(1)}`,
+        24,
+        49,
+      )
+    } else {
+      ctx.fillText('POSITION UNAVAILABLE', 24, 49)
+    }
+    if (vehicle.headingRad !== null) {
+      ctx.fillText(
+        `HEADING ${headingToCompassDeg(vehicle.headingRad).toFixed(1).padStart(5, '0')}°`,
+        24,
+        68,
+      )
+    } else {
+      ctx.fillText('HEADING UNAVAILABLE', 24, 68)
+    }
+    if (vehicle.position !== null) {
+      ctx.font = '700 13px "DM Sans", sans-serif'
+      const egoScreen = worldToScreen(camera, vehicle.position)
+      const halfWidth = vehicle.widthM === null ? 0 : (vehicle.widthM * camera.pixelsPerMetre) / 2
+      ctx.fillStyle = COLORS.egoLabel
+      ctx.fillText(
+        vehicle.widthM === null ? 'EGO · NOT TO SCALE' : 'EGO VEHICLE',
+        egoScreen.x + Math.max(halfWidth, 8) + 14,
+        egoScreen.y + 5,
+      )
+    }
     const points = frame.trajectory?.points
     if (layers.trajectory && points && points.length >= 2) {
       const end = worldToScreen(camera, points[points.length - 1]!.position)

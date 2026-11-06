@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFrameV1 } from './frameV1'
+import { parseFrame, parseFrameV1, parseFrameV2, serializeFrameV1 } from './frameV1'
 
 const minimalWire = () => ({
   format: 'roadpilot-visualization-frame',
@@ -81,5 +81,61 @@ describe('roadpilot-visualization-frame v1', () => {
     expect(parseFrameV1(bad).ok).toBe(false)
     const result = parseFrameV1({ ...minimalWire(), ego: { ...minimalWire().ego, length_m: -1 } })
     expect(result).toEqual({ ok: false, error: expect.stringContaining('ego.length_m') })
+  })
+})
+
+describe('roadpilot-visualization-frame v2', () => {
+  const sparseWire = () => ({
+    format: 'roadpilot-visualization-frame',
+    schema_version: { major: 2, minor: 0 },
+    source: { id: 'roadpilot' },
+    sequence: 8,
+    timestamp_s: 12.5,
+    ego: {
+      position: { x: 10, y: -20 },
+      heading_rad: 1.2,
+      speed_mps: 0,
+      steering_angle_rad: null,
+      curvature_per_m: null,
+      length_m: null,
+      width_m: null,
+    },
+    inputs: { steering: null, throttle: 0.2, brake: null },
+  })
+
+  it('preserves unavailable values as null and dispatches by major version', () => {
+    const result = parseFrame(sparseWire())
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.frame.ego).toEqual({
+      position: { x: 10, y: -20 },
+      headingRad: 1.2,
+      speedMps: 0,
+      steeringAngleRad: null,
+      curvaturePerM: null,
+      lengthM: null,
+      widthM: null,
+    })
+    expect(result.frame.inputs).toEqual({ steering: null, throttle: 0.2, brake: null })
+    expect(result.frame.agents).toEqual([])
+  })
+
+  it('accepts a frame with no spatial placement or optional readings', () => {
+    const wire = {
+      ...sparseWire(),
+      ego: { ...sparseWire().ego, position: null, heading_rad: null, speed_mps: null },
+    }
+    const result = parseFrameV2(wire)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.frame.ego.position).toBeNull()
+  })
+
+  it('does not silently serialize sparse frames using the stricter v1 schema', () => {
+    const result = parseFrameV2(sparseWire())
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(() => serializeFrameV1(result.frame)).toThrow(
+      'Cannot serialize schema 2 unavailable value',
+    )
   })
 })

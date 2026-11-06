@@ -54,7 +54,10 @@ export function MetricsRow({ frame }: { frame: SceneFrame }) {
       <Metric
         icon={<CircleGauge />}
         label="CURVATURE"
-        value={fixed(Math.abs(frame.ego.curvaturePerM), 4)}
+        value={fixed(
+          frame.ego.curvaturePerM === null ? null : Math.abs(frame.ego.curvaturePerM),
+          4,
+        )}
         unit="1/m"
         detail={curvatureText(frame.ego.curvaturePerM)}
       />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { EgoState } from '@/domain/scene'
+import type { CompleteEgoState } from '@/domain/scene'
 import { anchorFor, screenToWorld, worldToScreen } from './camera'
 import {
   DEFAULT_VIEW,
@@ -17,7 +17,7 @@ import type { ViewState } from './view'
 
 const viewport = { width: 800, height: 500 }
 
-const ego = (x: number, y: number, headingRad = Math.PI / 2): EgoState => ({
+const ego = (x: number, y: number, headingRad = Math.PI / 2): CompleteEgoState => ({
   position: { x, y },
   headingRad,
   speedMps: 20,

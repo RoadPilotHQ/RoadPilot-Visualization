@@ -19,7 +19,8 @@ export function compass(headingRad: number): string {
   return `${headingToCompassDeg(headingRad).toFixed(1).padStart(5, '0')}°`
 }
 
-export function curvatureText(curvaturePerM: number): string {
+export function curvatureText(curvaturePerM: number | null): string {
+  if (curvaturePerM === null) return 'No curvature reading'
   const magnitude = Math.abs(curvaturePerM)
   if (magnitude < 0.0002) return 'Straight'
   const strength = magnitude < 0.004 ? 'Gentle' : magnitude < 0.01 ? 'Moderate' : 'Tight'

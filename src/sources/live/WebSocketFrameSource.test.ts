@@ -72,6 +72,38 @@ describe('WebSocketFrameSource', () => {
     })
   })
 
+  it('accepts schema 2 with missing readings and preserves null values', () => {
+    const socket = new FakeSocket()
+    const source = new WebSocketFrameSource({
+      url: 'ws://127.0.0.1:8765',
+      createSocket: () => socket,
+    })
+    const frames: Array<{ ego: { position: unknown; widthM: unknown } }> = []
+    source.subscribe((frame) => frames.push(frame))
+    source.connect()
+    socket.open()
+    socket.message(
+      JSON.stringify({
+        format: 'roadpilot-visualization-frame',
+        schema_version: { major: 2, minor: 0 },
+        source: { id: 'roadpilot' },
+        sequence: 1,
+        timestamp_s: 5,
+        ego: {
+          position: null,
+          heading_rad: null,
+          speed_mps: 3,
+          steering_angle_rad: null,
+          curvature_per_m: null,
+          length_m: null,
+          width_m: null,
+        },
+      }),
+    )
+    expect(frames).toHaveLength(1)
+    expect(frames[0]?.ego).toMatchObject({ position: null, speedMps: 3, widthM: null })
+  })
+
   it('reconnects with a delay and stops retrying after disconnect', () => {
     vi.useFakeTimers()
     try {

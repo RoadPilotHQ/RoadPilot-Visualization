@@ -1,4 +1,4 @@
-import { parseFrameV1 } from '@/contract/frameV1'
+import { parseFrame } from '@/contract/frameV1'
 import type { SceneFrame } from '@/domain/scene'
 import type { DataSource, SourceInfo, SourceStatus, Unsubscribe } from '../DataSource'
 
@@ -25,7 +25,7 @@ const MIN_RECONNECT_DELAY_MS = 500
 const MAX_RECONNECT_DELAY_MS = 10_000
 
 /**
- * Read-only consumer for `roadpilot-visualization-frame` over a loopback WebSocket.
+ * Read-only consumer for `roadpilot-visualization-frame` v1/v2 over a loopback WebSocket.
  * It never sends data to the producer and discards malformed or unsupported frames.
  */
 export class WebSocketFrameSource implements DataSource {
@@ -142,7 +142,7 @@ export class WebSocketFrameSource implements DataSource {
         return
       }
     }
-    const parsed = parseFrameV1(value)
+    const parsed = parseFrame(value)
     if (!parsed.ok) {
       this.setStatus({ state: 'error', message: parsed.error })
       return
