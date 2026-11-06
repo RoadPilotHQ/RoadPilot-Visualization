@@ -37,6 +37,7 @@ DataSource  ->  SceneStore (SceneFrame, status, playback)  ->  UI panels / Rende
 ```
 
 - A `DataSource` (`src/sources/DataSource.ts`) emits immutable `SceneFrame` objects and status changes. Sources with a timeline (simulation, replay) also expose a `PlaybackControl`.
+- `WebSocketFrameSource` accepts validated frame-v1 JSON only from a loopback WebSocket address. It is strictly receive-only and reconnects with bounded exponential backoff. RoadPilot does not yet publish this stream; the end-to-end integration remains incomplete.
 - `attachSource` (`src/state/sceneStore.ts`) connects a source to the store. High-frequency timeline ticks are not published to the store; only discrete playback changes are. The current time is `frame.timestampS`.
 - UI components and renderers only read from the store.
 

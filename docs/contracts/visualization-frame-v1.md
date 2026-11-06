@@ -123,6 +123,6 @@ Field names are `snake_case`, and units are part of the name suffix: `_m`, `_mps
 
 ## Open points
 
-- Transport (localhost WebSocket or Tauri IPC) is not decided and is not part of this schema.
-- Frame rate, back-pressure and reconnect behaviour are defined with the live source in Phase 6.
+- The live source currently accepts this schema over a loopback WebSocket (`ws://` or `wss://`). The producer and server-side origin/authentication policy are not implemented yet.
+- The consumer reconnects with bounded exponential backoff. Producer frame rate and back-pressure remain to be defined with RoadPilot during Phase 6.
 - Map data does not travel in frames. It comes from RoadPilot-Map's own export, and its coordinates are in the unconfirmed map world unit (see the architecture overview). A producer that sends `lanes` must send them in metres.
