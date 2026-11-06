@@ -120,6 +120,7 @@ export function MapPackagePanel() {
               </span>
             )}
           </div>
+          <NavigationGraphSummary graph={data.navigationGraph} />
           <MapPackageCanvas key={loadGeneration} data={data} />
           <div className="map-package-legend">
             <span>
@@ -136,6 +137,92 @@ export function MapPackagePanel() {
         </>
       )}
     </section>
+  )
+}
+
+function NavigationGraphSummary({ graph }: { graph: RoadPilotMapPackageV1['navigationGraph'] }) {
+  return (
+    <section className="map-graph-summary" aria-labelledby="map-graph-title">
+      <div className="map-graph-head">
+        <h3 id="map-graph-title">Navigation graph</h3>
+        <span>
+          {graph
+            ? `Schema ${graph.schemaVersion.major}.${graph.schemaVersion.minor}`
+            : 'Not included'}
+        </span>
+      </div>
+      {graph ? (
+        <>
+          <div className="map-graph-counts">
+            <span>{graph.nodeCount.toLocaleString()} graph nodes</span>
+            <span>{graph.edgeCount.toLocaleString()} edges</span>
+            <span>{graph.issueCount.toLocaleString()} issues</span>
+            <span>
+              {graph.positionedNodeCount.toLocaleString()} positioned ·{' '}
+              {graph.missingPositionCount.toLocaleString()} without position
+            </span>
+          </div>
+          <GraphCountGroup
+            title="Edge evidence"
+            counts={graph.edgesByStatus}
+            includeZeroKeys={['confirmed', 'candidate', 'unknown', 'forbidden']}
+          />
+          <GraphCountGroup title="Edge categories" counts={graph.edgesByCategory} />
+          <GraphCountGroup title="Node kinds" counts={graph.nodesByKind} />
+          <GraphCountGroup title="Graph issues" counts={graph.issuesByKind} />
+          <GraphListGroup title="Graph limitations" items={graph.limitations} />
+          <p className="map-graph-limitations">
+            Positions identify map nodes, not lane positions. Edge status describes evidence, not a
+            drivable route. No lane geometry is inferred.
+          </p>
+        </>
+      ) : (
+        <p className="map-graph-limitations">This package has no navigation.jsonl graph.</p>
+      )}
+    </section>
+  )
+}
+
+function GraphCountGroup({
+  title,
+  counts,
+  includeZeroKeys = [],
+}: {
+  title: string
+  counts: Readonly<Record<string, number>>
+  includeZeroKeys?: readonly string[]
+}) {
+  const entries = [...new Set([...includeZeroKeys, ...Object.keys(counts)])]
+    .sort((a, b) => a.localeCompare(b))
+    .map((key) => [key, counts[key] ?? 0] as const)
+  if (entries.length === 0) return null
+  return (
+    <div className="map-graph-group">
+      <strong>{title}</strong>
+      <div>
+        {entries.map(([name, count]) => (
+          <span key={name}>
+            {name} · {count.toLocaleString()}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function GraphListGroup({ title, items }: { title: string; items: readonly string[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="map-graph-group">
+      <strong>{title}</strong>
+      <div>
+        {[...items]
+          .sort((a, b) => a.localeCompare(b))
+          .map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+      </div>
+    </div>
   )
 }
 

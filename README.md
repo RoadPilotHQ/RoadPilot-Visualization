@@ -39,7 +39,7 @@ It is a separate repository and a separate application. It is a **read-only** vi
 | State (Zustand)                                                  | Latest frame, source status, playback state, layer toggles                                                        |
 | `roadpilot-visualization-frame` v1                               | Wire contract with validation and serialization, see [`docs/contracts`](docs/contracts/visualization-frame-v1.md) |
 | 2D renderer                                                      | Canvas 2D with pan, zoom, ego-follow and seven independent layers; drawing runs outside React                     |
-| RoadPilot-Map package                                            | Local schema 1 validation and spatial grid in a worker; separate offline view of estimated curves                 |
+| RoadPilot-Map package                                            | Schema 1 geometry and optional graph validation in a worker; offline curve view and graph summary                 |
 
 Not implemented yet: scenario library, session recording and replay, navigation graph overlay, live connection to RoadPilot, 3D rendering, Tauri packaging.
 
@@ -92,7 +92,7 @@ RoadPilot is split into independent repositories. Each one is developed, version
 How Visualization is meant to receive data:
 
 - **RoadPilot** will provide live data through the `roadpilot-visualization-frame` contract. The interface is not defined on the RoadPilot side yet.
-- **RoadPilot-Map** provides local map data through its versioned package (`manifest.json`, `geometry.jsonl`, optional `navigation.jsonl`). The current viewer validates schema 1 package integrity and visualizes estimated road curves; it does not yet display the navigation graph.
+- **RoadPilot-Map** provides local map data through its versioned package (`manifest.json`, `geometry.jsonl`, optional `navigation.jsonl`). The current viewer validates schema 1 package integrity, visualizes estimated road curves, and summarizes the optional navigation graph without drawing lane geometry or routes.
 
 ## Roadmap
 

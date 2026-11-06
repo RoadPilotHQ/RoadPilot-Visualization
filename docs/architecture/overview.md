@@ -94,7 +94,7 @@ A Three.js backend can be added later as a second `Renderer` without changing th
 
 ## Map data
 
-Map data from RoadPilot-Map is static and large. The current local package reader in `src/sources/map` validates schema 1 package integrity and reads `manifest.json` and `geometry.jsonl` in a Web Worker. It builds a uniform spatial grid using the package's declared cell size and queries that grid for curves in the visible viewport. Estimated road curves are drawn in a separate offline canvas; simulation coordinates are never overlaid because the physical size of map units is unconfirmed. The optional `navigation.jsonl` graph is integrity-checked but not displayed yet. The view shows only the data in the package and does not invent unavailable lane geometry. Road curves in schema 1 remain estimates, not confirmed game-road shapes.
+Map data from RoadPilot-Map is static and large. The current local package reader in `src/sources/map` validates schema 1 package integrity and reads `manifest.json`, `geometry.jsonl` and the optional `navigation.jsonl` in a Web Worker. It builds a uniform spatial grid using the package's declared cell size and queries that grid for curves in the visible viewport. Estimated road curves are drawn in a separate offline canvas; simulation coordinates are never overlaid because the physical size of map units is unconfirmed. The navigation file is streamed and summarized by node kind, edge status/category, issues and position availability. Its map-node positions are not lane positions; no lane geometry or route is drawn or inferred. Road curves in schema 1 remain estimates, not confirmed game-road shapes.
 
 ## Testing
 

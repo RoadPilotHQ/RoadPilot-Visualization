@@ -88,6 +88,7 @@ describe('parseRoadPilotMapPackageV1', () => {
     expect(result.schemaVersion).toEqual({ major: 1, minor: 0 })
     expect(result.roadCount).toBe(1)
     expect(result.coordinateUnit).toBe('map-world-unit')
+    expect(result.navigationGraph).toBeNull()
     expect(result.curves[0]).toMatchObject({
       id: '03',
       quality: 'estimated',

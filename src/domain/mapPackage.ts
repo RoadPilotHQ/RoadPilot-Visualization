@@ -29,10 +29,25 @@ export interface RoadPilotMapPackageV1 {
   readonly coordinates: Float32Array
   readonly curves: readonly MapRoadCurve[]
   readonly spatialIndex: MapCurveSpatialIndex
+  readonly navigationGraph: MapNavigationGraphSummary | null
 }
 
 export interface MapCurveSpatialIndex {
   readonly cellSize: number
   readonly cells: Readonly<Record<string, readonly number[]>>
   readonly overflowCurveIndices: readonly number[]
+}
+
+export interface MapNavigationGraphSummary {
+  readonly schemaVersion: { readonly major: 1; readonly minor: number }
+  readonly nodeCount: number
+  readonly edgeCount: number
+  readonly issueCount: number
+  readonly positionedNodeCount: number
+  readonly missingPositionCount: number
+  readonly limitations: readonly string[]
+  readonly nodesByKind: Readonly<Record<string, number>>
+  readonly edgesByStatus: Readonly<Record<string, number>>
+  readonly edgesByCategory: Readonly<Record<string, number>>
+  readonly issuesByKind: Readonly<Record<string, number>>
 }

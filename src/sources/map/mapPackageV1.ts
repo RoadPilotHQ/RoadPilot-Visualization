@@ -183,6 +183,22 @@ export function parseRoadPilotMapPackageV1(
       `unsupported geometry schema major version ${geometryFile.schema_version.major}`,
     )
   }
+  const navigationFiles = manifest.files.filter((file) => file.role === 'navigation')
+  if (navigationFiles.length > 1) throw new Error('manifest lists more than one navigation file')
+  const navigationFile = navigationFiles[0]
+  if (navigationFile) {
+    if (
+      navigationFile.name !== 'navigation.jsonl' ||
+      navigationFile.format !== 'roadpilot-map-navigation-graph'
+    ) {
+      throw new Error('manifest must list navigation.jsonl as a RoadPilot-Map navigation graph')
+    }
+    if (navigationFile.schema_version.major !== 1) {
+      throw new Error(
+        `unsupported navigation schema major version ${navigationFile.schema_version.major}`,
+      )
+    }
+  }
 
   return parseGeometry(
     geometryText,
@@ -430,6 +446,7 @@ function parseGeometry(
     coordinates: coordinates?.subarray(0, coordinateOffset) ?? new Float32Array(),
     curves,
     spatialIndex: buildMapCurveSpatialIndex(curves, cellSize),
+    navigationGraph: null,
   }
 }
 
