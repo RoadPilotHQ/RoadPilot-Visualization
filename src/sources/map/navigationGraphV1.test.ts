@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseNavigationGraphV1 } from './navigationGraphV1'
+import { createNavigationGraphV1Accumulator, parseNavigationGraphV1 } from './navigationGraphV1'
 
 const graph = (major = 1, footer = true) => {
   const records: unknown[] = [
@@ -109,5 +109,30 @@ describe('parseNavigationGraphV1', () => {
     expect(result.topology!.categories).toEqual(['road_lane'])
     expect(result.topology!.edgeSources).toEqual(['a'])
     expect(parseNavigationGraphV1(graph()).topology?.sampledEdgeCount).toBe(0)
+  })
+
+  it('retains bounded lookup data for full graph inspection', () => {
+    const parser = createNavigationGraphV1Accumulator()
+    graph()
+      .replace('"source":"a"}', '"source":"a","rules":[{"name":"speed_limit","resolved":false}]}')
+      .trim()
+      .split('\n')
+      .forEach((line, index) => parser.push(line, index + 1))
+    const result = parser.finish()
+    const index = parser.getInspectionIndex()
+
+    expect(result.inspectionAvailable).toBe(true)
+    expect(index).toMatchObject({
+      nodeCount: 2,
+      edgeCount: 1,
+      edgeOffsets: new Uint32Array([0, 1, 1]),
+      edgeEndpoints: new Uint32Array([0, 1]),
+      edgeStatuses: new Uint8Array([1]),
+      edgeCategoryCodes: new Uint32Array([0]),
+      categories: ['road_lane'],
+    })
+    expect(index?.nodeMapIds).toEqual(new BigUint64Array([1n, 2n]))
+    expect(index?.edgeSourceIds).toEqual(new BigUint64Array([10n]))
+    expect(index?.edgeRules.get(0)).toEqual([{ name: 'speed_limit', resolved: false }])
   })
 })

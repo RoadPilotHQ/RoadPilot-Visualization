@@ -1,30 +1,71 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ChangeEvent,
+  FormEvent as ReactFormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
   WheelEvent,
 } from 'react'
 import type { RoadPilotMapPackageV1 } from '@/domain/mapPackage'
+import type { MapNavigationGraph } from '@/domain/mapPackage'
 import { findMapGraphSelection } from '@/domain/mapGraphSelection'
 import type { MapGraphSelection } from '@/domain/mapGraphSelection'
+import type {
+  NavigationGraphEdgeDetails,
+  NavigationGraphNodeDetails,
+  NavigationGraphPathResult,
+} from '@/domain/mapNavigationInspection'
 import { mapCurveSampleStride } from '@/domain/mapRendering'
 import { queryMapCurveSpatialIndex } from '@/domain/mapSpatialIndex'
 
 type MapPackageWorkerResponse =
   | { readonly type: 'loaded'; readonly data: RoadPilotMapPackageV1 }
   | { readonly type: 'error'; readonly message: string }
+  | {
+      readonly type: 'node-inspected'
+      readonly requestId: number
+      readonly result: NavigationGraphNodeDetails | null
+    }
+  | {
+      readonly type: 'edge-inspected'
+      readonly requestId: number
+      readonly result: NavigationGraphEdgeDetails | null
+    }
+  | {
+      readonly type: 'path-inspected'
+      readonly requestId: number
+      readonly result: NavigationGraphPathResult
+    }
+
+type GraphInspectionCommand =
+  | { readonly type: 'inspect-node'; readonly id: number }
+  | { readonly type: 'inspect-edge'; readonly id: number }
+  | {
+      readonly type: 'inspect-path'
+      readonly from: number
+      readonly to: number
+      readonly statuses: readonly string[]
+    }
+
+type GraphInspectionResult =
+  | { readonly type: 'node'; readonly result: NavigationGraphNodeDetails | null }
+  | { readonly type: 'edge'; readonly result: NavigationGraphEdgeDetails | null }
 
 export function MapPackagePanel() {
   const inputRef = useRef<HTMLInputElement>(null)
   const workerRef = useRef<Worker | null>(null)
+  const requestIdRef = useRef(0)
+  const pendingRequestIdRef = useRef<number | null>(null)
   const [data, setData] = useState<RoadPilotMapPackageV1 | null>(null)
   const [status, setStatus] = useState(
     'Choose a local RoadPilot-Map package folder to inspect its road curves.',
   )
   const [error, setError] = useState<string | null>(null)
   const [loadGeneration, setLoadGeneration] = useState(0)
+  const [inspectionResult, setInspectionResult] = useState<GraphInspectionResult | null>(null)
+  const [pathResult, setPathResult] = useState<NavigationGraphPathResult | null>(null)
+  const [inspectionBusy, setInspectionBusy] = useState(false)
 
   useEffect(() => {
     inputRef.current?.setAttribute('webkitdirectory', '')
@@ -33,17 +74,42 @@ export function MapPackagePanel() {
     })
     workerRef.current = worker
     worker.onmessage = (event: MessageEvent<MapPackageWorkerResponse>) => {
-      if (event.data.type === 'error') {
-        setError(event.data.message)
+      const response = event.data
+      if (response.type === 'error') {
+        pendingRequestIdRef.current = null
+        setInspectionBusy(false)
+        setError(response.message)
         setStatus('The package could not be loaded.')
         return
       }
-      setData(event.data.data)
-      setLoadGeneration((generation) => generation + 1)
-      setError(null)
-      setStatus('Package verified and loaded locally.')
+      if (response.type === 'loaded') {
+        pendingRequestIdRef.current = null
+        setInspectionBusy(false)
+        setInspectionResult(null)
+        setPathResult(null)
+        setData(response.data)
+        setLoadGeneration((generation) => generation + 1)
+        setError(null)
+        setStatus('Package verified and loaded locally.')
+        return
+      }
+      if (response.requestId !== pendingRequestIdRef.current) return
+      pendingRequestIdRef.current = null
+      setInspectionBusy(false)
+      if (response.type === 'node-inspected') {
+        setInspectionResult({ type: 'node', result: response.result })
+        setPathResult(null)
+      } else if (response.type === 'edge-inspected') {
+        setInspectionResult({ type: 'edge', result: response.result })
+        setPathResult(null)
+      } else {
+        setPathResult(response.result)
+        setInspectionResult(null)
+      }
     }
     worker.onerror = () => {
+      pendingRequestIdRef.current = null
+      setInspectionBusy(false)
       setError('The map package reader stopped unexpectedly.')
       setStatus('The package could not be loaded.')
     }
@@ -65,6 +131,11 @@ export function MapPackagePanel() {
     }
     setError(null)
     setData(null)
+    setInspectionResult(null)
+    setPathResult(null)
+    setInspectionBusy(false)
+    pendingRequestIdRef.current = null
+    requestIdRef.current += 1
     setStatus('Reading and verifying the local package in the background…')
     const request = {
       type: 'load',
@@ -73,6 +144,15 @@ export function MapPackagePanel() {
       additionalFiles: files.filter((file) => file !== manifest && file !== geometry),
     }
     workerRef.current?.postMessage(request)
+  }
+
+  const sendInspectionCommand = (command: GraphInspectionCommand) => {
+    const requestId = ++requestIdRef.current
+    pendingRequestIdRef.current = requestId
+    setInspectionBusy(true)
+    setInspectionResult(null)
+    setPathResult(null)
+    workerRef.current?.postMessage({ ...command, requestId })
   }
 
   const counts = useMemo(() => {
@@ -131,6 +211,19 @@ export function MapPackagePanel() {
           <NavigationGraphSummary graph={data.navigationGraph} />
           {data.navigationGraph && (
             <NavigationGraphCanvas key={loadGeneration} graph={data.navigationGraph} />
+          )}
+          {data.navigationGraph && (
+            <NavigationGraphExplorer
+              graph={data.navigationGraph}
+              busy={inspectionBusy}
+              result={inspectionResult}
+              pathResult={pathResult}
+              onInspectNode={(id) => sendInspectionCommand({ type: 'inspect-node', id })}
+              onInspectEdge={(id) => sendInspectionCommand({ type: 'inspect-edge', id })}
+              onInspectPath={(from, to, statuses) =>
+                sendInspectionCommand({ type: 'inspect-path', from, to, statuses })
+              }
+            />
           )}
           <MapPackageCanvas key={loadGeneration} data={data} />
           <div className="map-package-legend">
@@ -569,6 +662,296 @@ function GraphSelectionDetails({
       )}
     </section>
   )
+}
+
+function NavigationGraphExplorer({
+  graph,
+  busy,
+  result,
+  pathResult,
+  onInspectNode,
+  onInspectEdge,
+  onInspectPath,
+}: {
+  graph: MapNavigationGraph
+  busy: boolean
+  result: GraphInspectionResult | null
+  pathResult: NavigationGraphPathResult | null
+  onInspectNode: (id: number) => void
+  onInspectEdge: (id: number) => void
+  onInspectPath: (from: number, to: number, statuses: readonly string[]) => void
+}) {
+  const [nodeId, setNodeId] = useState('')
+  const [edgeId, setEdgeId] = useState('')
+  const [pathFrom, setPathFrom] = useState('')
+  const [pathTo, setPathTo] = useState('')
+  const [statuses, setStatuses] = useState<string[]>([])
+  const nodeValue = parseGraphIndex(nodeId, graph.nodeCount)
+  const edgeValue = parseGraphIndex(edgeId, graph.edgeCount)
+  const fromValue = parseGraphIndex(pathFrom, graph.nodeCount)
+  const toValue = parseGraphIndex(pathTo, graph.nodeCount)
+
+  return (
+    <section className="map-graph-explorer" aria-labelledby="map-graph-explorer-title">
+      <div className="map-graph-view-head">
+        <strong id="map-graph-explorer-title">Full graph inspection</strong>
+        <span>
+          {graph.inspectionAvailable ? 'All exported IDs' : 'Unavailable at this graph size'}
+        </span>
+      </div>
+      {!graph.inspectionAvailable ? (
+        <p className="map-graph-limitations">
+          Full inspection is disabled above 2 million nodes or 3 million edges. The bounded topology
+          sample remains available where positions exist.
+        </p>
+      ) : (
+        <>
+          <div className="map-graph-inspect-forms">
+            <form
+              onSubmit={(event: ReactFormEvent<HTMLFormElement>) => {
+                event.preventDefault()
+                if (nodeValue !== null) onInspectNode(nodeValue)
+              }}
+            >
+              <label htmlFor="graph-node-id">
+                Inspect any graph node ID (0–{Math.max(0, graph.nodeCount - 1).toLocaleString()})
+              </label>
+              <div>
+                <input
+                  id="graph-node-id"
+                  type="number"
+                  min="0"
+                  max={graph.nodeCount - 1}
+                  step="1"
+                  value={nodeId}
+                  onChange={(event) => setNodeId(event.currentTarget.value)}
+                />
+                <button type="submit" disabled={busy || nodeValue === null}>
+                  Inspect node
+                </button>
+              </div>
+            </form>
+            <form
+              onSubmit={(event: ReactFormEvent<HTMLFormElement>) => {
+                event.preventDefault()
+                if (edgeValue !== null) onInspectEdge(edgeValue)
+              }}
+            >
+              <label htmlFor="graph-edge-id">
+                Inspect any graph edge ID (0–{Math.max(0, graph.edgeCount - 1).toLocaleString()})
+              </label>
+              <div>
+                <input
+                  id="graph-edge-id"
+                  type="number"
+                  min="0"
+                  max={graph.edgeCount - 1}
+                  step="1"
+                  value={edgeId}
+                  onChange={(event) => setEdgeId(event.currentTarget.value)}
+                />
+                <button type="submit" disabled={busy || edgeValue === null}>
+                  Inspect edge
+                </button>
+              </div>
+            </form>
+          </div>
+          <form
+            className="map-graph-path-form"
+            onSubmit={(event: ReactFormEvent<HTMLFormElement>) => {
+              event.preventDefault()
+              if (fromValue !== null && toValue !== null && statuses.length > 0)
+                onInspectPath(fromValue, toValue, statuses)
+            }}
+          >
+            <strong>Inspect a directed graph path</strong>
+            <div className="map-graph-path-inputs">
+              <label>
+                From node ID
+                <input
+                  type="number"
+                  min="0"
+                  max={graph.nodeCount - 1}
+                  step="1"
+                  value={pathFrom}
+                  onChange={(event) => setPathFrom(event.currentTarget.value)}
+                />
+              </label>
+              <label>
+                To node ID
+                <input
+                  type="number"
+                  min="0"
+                  max={graph.nodeCount - 1}
+                  step="1"
+                  value={pathTo}
+                  onChange={(event) => setPathTo(event.currentTarget.value)}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={busy || fromValue === null || toValue === null || statuses.length === 0}
+              >
+                Inspect path
+              </button>
+            </div>
+            <fieldset>
+              <legend>Include exported edge statuses</legend>
+              {GRAPH_EDGE_STATUSES.map((status) => (
+                <label key={status}>
+                  <input
+                    type="checkbox"
+                    checked={statuses.includes(status)}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked
+                      setStatuses((current) =>
+                        checked ? [...current, status] : current.filter((item) => item !== status),
+                      )
+                    }}
+                  />
+                  {status}
+                </label>
+              ))}
+            </fieldset>
+            <p className="map-graph-limitations">
+              This examines directed connectivity in the selected statuses. It is not route guidance
+              and does not establish that a path is drivable.
+            </p>
+          </form>
+          {busy && (
+            <p className="map-graph-query-result" role="status">
+              Inspecting the full graph in the background…
+            </p>
+          )}
+          {result && <GraphInspectionDetails result={result} />}
+          {pathResult && <GraphPathDetails result={pathResult} />}
+        </>
+      )}
+    </section>
+  )
+}
+
+function GraphInspectionDetails({ result }: { result: GraphInspectionResult }) {
+  if (!result.result) {
+    return (
+      <p className="map-graph-query-result" role="status">
+        That exported ID is unavailable.
+      </p>
+    )
+  }
+  const values: readonly [string, string][] =
+    result.type === 'node'
+      ? [
+          ['Kind', result.result.kind],
+          ['Map node UID', `0x${result.result.mapNodeId}`],
+          [
+            'Position',
+            result.result.position
+              ? result.result.position.map((value) => value.toFixed(2)).join(', ') +
+                ' map units (x, y, z)'
+              : 'Unavailable',
+          ],
+          ...(result.result.ownerId
+            ? [
+                [
+                  result.result.kind.startsWith('lane_') ? 'Road UID' : 'Prefab UID',
+                  `0x${result.result.ownerId}`,
+                ] as [string, string],
+              ]
+            : []),
+          ...(result.result.side ? [['Side', result.result.side] as [string, string]] : []),
+          ...(result.result.index !== null
+            ? [['Lane index', String(result.result.index)] as [string, string]]
+            : []),
+          ...(result.result.arm !== null
+            ? [['Prefab arm', String(result.result.arm)] as [string, string]]
+            : []),
+          ...(result.result.slot !== null
+            ? [['Prefab slot', String(result.result.slot)] as [string, string]]
+            : []),
+        ]
+      : [
+          ['Evidence status', result.result.status],
+          ['Category', result.result.category],
+          ['From → to', `${result.result.from} → ${result.result.to}`],
+          ['Source UID', `0x${result.result.sourceId}`],
+          [
+            'Traffic rules',
+            result.result.rules.length > 0
+              ? result.result.rules
+                  .map((rule) => `${rule.name} (${rule.resolved ? 'resolved' : 'unresolved'})`)
+                  .join(', ')
+              : 'None exported',
+          ],
+        ]
+  return (
+    <dl className="map-graph-query-result" aria-live="polite">
+      <dt>
+        {result.type === 'node'
+          ? `Graph node ${result.result.id}`
+          : `Graph edge ${result.result.id}`}
+      </dt>
+      {values.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function GraphPathDetails({ result }: { result: NavigationGraphPathResult }) {
+  const labels: Record<NavigationGraphPathResult['status'], string> = {
+    found: `Found a directed graph chain with ${result.totalEdges.toLocaleString()} edges.`,
+    'not-found': 'No directed graph chain exists for the selected statuses.',
+    invalid: 'Enter node IDs that exist in this graph.',
+    unavailable: 'Full graph inspection is unavailable for this package size.',
+  }
+  return (
+    <div className="map-graph-query-result" aria-live="polite">
+      <p>
+        <strong>Topology result:</strong> {labels[result.status]} Searched{' '}
+        {result.exploredNodes.toLocaleString()} nodes.
+      </p>
+      {result.status === 'found' && result.steps.length > 0 && (
+        <div className="map-graph-path-table-wrap">
+          <table className="map-graph-path-table">
+            <thead>
+              <tr>
+                <th>Edge</th>
+                <th>From → to</th>
+                <th>Status</th>
+                <th>Category</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.steps.map((edge) => (
+                <tr key={edge.id}>
+                  <td>{edge.id}</td>
+                  <td>
+                    {edge.from} → {edge.to}
+                  </td>
+                  <td>{edge.status}</td>
+                  <td>{edge.category}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {result.truncated && (
+            <p>Showing the first {result.steps.length} edges of this graph chain.</p>
+          )}
+        </div>
+      )}
+      <p className="map-graph-limitations">A graph chain is not a validated or drivable route.</p>
+    </div>
+  )
+}
+
+function parseGraphIndex(value: string, count: number): number | null {
+  if (!/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed < count ? parsed : null
 }
 
 function MapPackageCanvas({ data }: { data: RoadPilotMapPackageV1 }) {

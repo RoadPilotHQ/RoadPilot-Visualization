@@ -1,9 +1,12 @@
 import { z } from 'zod'
+import type { NavigationGraphInspectionIndex } from '@/domain/mapNavigationInspection'
 import type { MapNavigationGraph } from '@/domain/mapPackage'
 
 const MAX_LINE_LENGTH = 4 * 1024 * 1024
 const MAX_TOPOLOGY_NODES = 2_000_000
 const MAX_TOPOLOGY_EDGES = 50_000
+const MAX_INSPECTION_EDGES = 3_000_000
+const ABSENT_DETAIL = 0xffffffff
 const EDGE_STATUS_CODE = { confirmed: 0, candidate: 1, unknown: 2, forbidden: 3 } as const
 const NODE_KIND_CODE = { lane_entry: 0, lane_exit: 1, prefab_input: 2, prefab_output: 3 } as const
 const HEX_UID = /^[0-9a-f]{1,16}$/
@@ -91,6 +94,23 @@ export function createNavigationGraphV1Accumulator() {
   let footerSeen = false
   let nodePositions: Float64Array | null = null
   let nodeKinds = new Uint8Array(0)
+  let inspectionAvailable = false
+  let nodeAltitudes = new Float64Array(0)
+  let nodeMapIds = new BigUint64Array(0)
+  let nodeOwnerIds = new BigUint64Array(0)
+  let nodeDetails = new Uint32Array(0)
+  let nodeSides = new Uint8Array(0)
+  let edgeEndpoints = new Uint32Array(0)
+  let edgeStatuses = new Uint8Array(0)
+  let edgeCategoryCodes = new Uint32Array(0)
+  let edgeSourceIds = new BigUint64Array(0)
+  let edgeOffsets = new Uint32Array(0)
+  let edgeOffsetCursor = 0
+  let lastEdgeFrom = -1
+  const edgeRules = new Map<
+    number,
+    readonly { readonly name: string; readonly resolved: boolean }[]
+  >()
   let sampledEdges = new Uint32Array(0)
   let sampledEdgeCount = 0
   const sampledSources: string[] = []
@@ -128,6 +148,22 @@ export function createNavigationGraphV1Accumulator() {
         sampleStride = Math.max(1, Math.ceil(header.counts.edges / MAX_TOPOLOGY_EDGES))
         sampledEdges = new Uint32Array(Math.min(MAX_TOPOLOGY_EDGES, header.counts.edges) * 5)
       }
+      inspectionAvailable =
+        header.counts.nodes <= MAX_TOPOLOGY_NODES && header.counts.edges <= MAX_INSPECTION_EDGES
+      if (inspectionAvailable) {
+        nodeAltitudes = new Float64Array(header.counts.nodes)
+        nodeAltitudes.fill(Number.NaN)
+        nodeMapIds = new BigUint64Array(header.counts.nodes)
+        nodeOwnerIds = new BigUint64Array(header.counts.nodes)
+        nodeDetails = new Uint32Array(header.counts.nodes * 3)
+        nodeDetails.fill(ABSENT_DETAIL)
+        nodeSides = new Uint8Array(header.counts.nodes)
+        edgeEndpoints = new Uint32Array(header.counts.edges * 2)
+        edgeStatuses = new Uint8Array(header.counts.edges)
+        edgeCategoryCodes = new Uint32Array(header.counts.edges)
+        edgeSourceIds = new BigUint64Array(header.counts.edges)
+        edgeOffsets = new Uint32Array(header.counts.nodes + 1)
+      }
       return
     }
     if (footerSeen) throw new Error(`navigation.jsonl line ${lineNumber} follows the footer`)
@@ -149,6 +185,16 @@ export function createNavigationGraphV1Accumulator() {
         nodeCount += 1
         increment(nodesByKind, node.kind)
         if (nodePositions) nodeKinds[node.id] = NODE_KIND_CODE[node.kind]
+        if (inspectionAvailable) {
+          nodeMapIds[node.id] = BigInt(`0x${node.map_node}`)
+          const ownerId = node.road ?? node.prefab
+          if (ownerId) nodeOwnerIds[node.id] = BigInt(`0x${ownerId}`)
+          const detailOffset = node.id * 3
+          nodeDetails[detailOffset] = node.index ?? ABSENT_DETAIL
+          nodeDetails[detailOffset + 1] = node.arm ?? ABSENT_DETAIL
+          nodeDetails[detailOffset + 2] = node.slot ?? ABSENT_DETAIL
+          nodeSides[node.id] = node.side === 'left' ? 1 : node.side === 'right' ? 2 : 0
+        }
         if (node.position === null) missingPositionCount += 1
         else {
           positionedNodeCount += 1
@@ -161,6 +207,7 @@ export function createNavigationGraphV1Accumulator() {
           if (nodePositions) {
             nodePositions[node.id * 2] = x
             nodePositions[node.id * 2 + 1] = y
+            if (inspectionAvailable) nodeAltitudes[node.id] = node.position[1] / 256
           }
         }
         break
@@ -175,9 +222,34 @@ export function createNavigationGraphV1Accumulator() {
         if (edge.from >= nodeCount || edge.to >= nodeCount) {
           throw new Error(`navigation.jsonl line ${lineNumber}: edge refers to a missing node`)
         }
+        if (edge.from < lastEdgeFrom) {
+          throw new Error(
+            `navigation.jsonl line ${lineNumber}: edges must be ordered by start node`,
+          )
+        }
+        lastEdgeFrom = edge.from
+        while (edgeOffsets.length > 0 && edgeOffsetCursor <= edge.from) {
+          edgeOffsets[edgeOffsetCursor] = edge.id
+          edgeOffsetCursor += 1
+        }
         edgeCount += 1
         increment(edgesByStatus, edge.status)
         increment(edgesByCategory, edge.category)
+        let categoryCode = categoryCodes.get(edge.category)
+        if (categoryCode === undefined) {
+          categoryCode = categories.length
+          categories.push(edge.category)
+          categoryCodes.set(edge.category, categoryCode)
+        }
+        if (inspectionAvailable) {
+          const edgeOffset = edge.id * 2
+          edgeEndpoints[edgeOffset] = edge.from
+          edgeEndpoints[edgeOffset + 1] = edge.to
+          edgeStatuses[edge.id] = EDGE_STATUS_CODE[edge.status]
+          edgeCategoryCodes[edge.id] = categoryCode
+          edgeSourceIds[edge.id] = BigInt(`0x${edge.source}`)
+          if (edge.rules?.length) edgeRules.set(edge.id, edge.rules)
+        }
         if (nodePositions && edge.id % sampleStride === 0) {
           const fromOffset = edge.from * 2
           const toOffset = edge.to * 2
@@ -188,12 +260,6 @@ export function createNavigationGraphV1Accumulator() {
             Number.isFinite(nodePositions[toOffset + 1]) &&
             sampledEdgeCount * 5 < sampledEdges.length
           ) {
-            let categoryCode = categoryCodes.get(edge.category)
-            if (categoryCode === undefined) {
-              categoryCode = categories.length
-              categories.push(edge.category)
-              categoryCodes.set(edge.category, categoryCode)
-            }
             const edgeOffset = sampledEdgeCount * 5
             sampledEdges[edgeOffset] = edge.id
             sampledEdges[edgeOffset + 1] = edge.from
@@ -239,6 +305,10 @@ export function createNavigationGraphV1Accumulator() {
     finish(): MapNavigationGraph {
       if (!header) throw new Error('navigation.jsonl is missing its header')
       if (!footerSeen) throw new Error('navigation.jsonl is missing its complete footer')
+      while (edgeOffsets.length > 0 && edgeOffsetCursor < edgeOffsets.length) {
+        edgeOffsets[edgeOffsetCursor] = edgeCount
+        edgeOffsetCursor += 1
+      }
       const bounds = Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null
       return {
         schemaVersion: { major: 1, minor: header.schema_version.minor },
@@ -252,6 +322,7 @@ export function createNavigationGraphV1Accumulator() {
         edgesByStatus,
         edgesByCategory,
         issuesByKind,
+        inspectionAvailable,
         topology: nodePositions
           ? {
               positions: nodePositions,
@@ -264,6 +335,27 @@ export function createNavigationGraphV1Accumulator() {
               bounds,
             }
           : null,
+      }
+    },
+    getInspectionIndex(): NavigationGraphInspectionIndex | null {
+      if (!inspectionAvailable || !footerSeen) return null
+      return {
+        nodeCount,
+        edgeCount,
+        positions: nodePositions!,
+        altitudes: nodeAltitudes,
+        nodeKinds,
+        nodeMapIds,
+        nodeOwnerIds,
+        nodeDetails,
+        nodeSides,
+        edgeEndpoints,
+        edgeStatuses,
+        edgeCategoryCodes,
+        edgeSourceIds,
+        edgeOffsets,
+        categories,
+        edgeRules,
       }
     },
   }

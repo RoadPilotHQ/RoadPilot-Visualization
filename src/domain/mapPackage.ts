@@ -54,6 +54,7 @@ export interface MapNavigationGraphSummary {
 
 export interface MapNavigationGraph extends MapNavigationGraphSummary {
   readonly topology: MapNavigationTopology | null
+  readonly inspectionAvailable: boolean
 }
 
 export interface MapNavigationTopology {
