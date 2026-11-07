@@ -141,11 +141,15 @@ const frameSchema = z.object({
 const optionalPoint = point.nullable()
 const optionalPositiveNumber = z.number().positive().nullable()
 const optionalFiniteNumber = z.number().nullable()
+const sourceGame = z
+  .string()
+  .nullish()
+  .transform((value): 'ats' | 'ets2' | null => (value === 'ats' || value === 'ets2' ? value : null))
 
 const frameV2Schema = z.object({
   format: z.literal(FRAME_FORMAT),
   schema_version: versionSchema,
-  source: z.object({ id: z.string().min(1) }),
+  source: z.object({ id: z.string().min(1), game: sourceGame }),
   sequence: z.number().int().nonnegative(),
   timestamp_s: z.number(),
   ego: z.object({
@@ -205,6 +209,7 @@ export function parseFrameV2(input: unknown): ParseResult {
       sequence: w.sequence,
       timestampS: w.timestamp_s,
       sourceId: w.source.id,
+      sourceGame: w.source.game,
       ego: {
         position: w.ego.position,
         headingRad: w.ego.heading_rad,

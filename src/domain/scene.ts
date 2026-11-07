@@ -109,6 +109,8 @@ export interface SceneFrame {
   /** Seconds on the source's own clock. */
   readonly timestampS: number
   readonly sourceId: string
+  /** Game identified by the live producer, when available. */
+  readonly sourceGame?: 'ats' | 'ets2' | null
   readonly ego: EgoState
   readonly agents: readonly Agent[]
   readonly signals: readonly TrafficSignal[]

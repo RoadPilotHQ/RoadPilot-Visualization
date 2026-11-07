@@ -118,6 +118,21 @@ describe('roadpilot-visualization-frame v2', () => {
     })
     expect(result.frame.inputs).toEqual({ steering: null, throttle: 0.2, brake: null })
     expect(result.frame.agents).toEqual([])
+    expect(result.frame.sourceGame).toBeNull()
+  })
+
+  it('preserves a recognized game and degrades unknown game values to unavailable', () => {
+    const ats = parseFrameV2({ ...sparseWire(), source: { id: 'roadpilot', game: 'ats' } })
+    expect(ats.ok && ats.frame.sourceGame).toBe('ats')
+
+    const ets2 = parseFrameV2({ ...sparseWire(), source: { id: 'roadpilot', game: 'ets2' } })
+    expect(ets2.ok && ets2.frame.sourceGame).toBe('ets2')
+
+    const unknown = parseFrameV2({
+      ...sparseWire(),
+      source: { id: 'roadpilot', game: 'future-game' },
+    })
+    expect(unknown.ok && unknown.frame.sourceGame).toBeNull()
   })
 
   it('accepts a frame with no spatial placement or optional readings', () => {

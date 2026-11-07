@@ -4,6 +4,8 @@ Status: **defined and parsed** in `src/contract/frame.ts`. The RoadPilot produce
 
 The format, units, coordinate conventions, arrays, and optional `trajectory`, `acc`, and `status` fields match [schema 1](visualization-frame-v1.md). The `schema_version` is `{ "major": 2, "minor": 0 }`.
 
+The producer may include `source.game` as `"ats"` or `"ets2"`. Older producers may omit it or send `null`; readers must keep the frame usable and treat an unknown game string as unavailable. Consumers can use this metadata to reject a map package for a different game.
+
 ## Nullable ego readings
 
 In schema 2, each of the following `ego` fields is required but may be `null` when the producer does not have a valid reading:
