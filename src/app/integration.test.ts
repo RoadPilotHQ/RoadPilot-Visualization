@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFrameV1, serializeFrameV1 } from '@/contract/frameV1'
+import { parseFrameV1, serializeFrameV1 } from '@/contract/frame'
 import type { SceneFrame } from '@/domain/scene'
 import { laneOffsetM, leadAgent, lookaheadM } from '@/domain/selectors'
 import { sampleHighwayFollow } from '@/sources/simulation/highwayFollow'

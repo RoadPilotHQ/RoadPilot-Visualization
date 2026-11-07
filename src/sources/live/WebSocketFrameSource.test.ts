@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { serializeFrameV1 } from '@/contract/frameV1'
+import { serializeFrameV1 } from '@/contract/frame'
 import { sampleHighwayFollow } from '@/sources/simulation/highwayFollow'
 import { WebSocketFrameSource } from './WebSocketFrameSource'
 

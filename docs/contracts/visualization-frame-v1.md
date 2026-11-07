@@ -1,8 +1,8 @@
 # Visualization frame, schema 1
 
-Status: **defined and implemented** in `src/contract/frameV1.ts` (validation, mapping to the domain model, serialization). No producer other than the simulation exists yet.
+Status: **defined and implemented** in `src/contract/frame.ts` (validation, mapping to the domain model, serialization). The deterministic simulation emits schema 1; RoadPilot emits schema 2.
 
-This document specifies the format that RoadPilot (or any other producer, or a recording) uses to send scene data to RoadPilot-Visualization. It is owned by this repository. RoadPilot has not defined its output side yet; when it does, it can produce this format directly, or a small adapter can translate.
+This document specifies schema 1 of the format that RoadPilot (or any other producer, or a recording) uses to send scene data to RoadPilot-Visualization. Schema 2 supports nullable live readings; see [schema 2](visualization-frame-v2.md).
 
 The contract is one-directional: producer to Visualization. It contains no commands.
 

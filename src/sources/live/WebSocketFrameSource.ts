@@ -1,4 +1,4 @@
-import { parseFrame } from '@/contract/frameV1'
+import { parseFrame } from '@/contract/frame'
 import type { SceneFrame } from '@/domain/scene'
 import type { DataSource, SourceInfo, SourceStatus, Unsubscribe } from '../DataSource'
 

@@ -1,6 +1,6 @@
 # Visualization frame, schema 2
 
-Status: **defined and parsed** in `src/contract/frameV1.ts`. This major version supports live sources whose measurements are legitimately unavailable. Schema 1 remains supported unchanged.
+Status: **defined and parsed** in `src/contract/frame.ts`. The RoadPilot producer sends this version over the local read-only stream. This major version supports live sources whose measurements are legitimately unavailable. Schema 1 remains supported unchanged.
 
 The format, units, coordinate conventions, arrays, and optional `trajectory`, `acc`, and `status` fields match [schema 1](visualization-frame-v1.md). The `schema_version` is `{ "major": 2, "minor": 0 }`.
 
@@ -24,4 +24,4 @@ All other schema 1 fields retain their schema 1 validation and meaning. Readers 
 
 ## Live transport
 
-The read-only live source accepts schema 1 and schema 2 JSON messages over `ws://` or `wss://` loopback addresses. The RoadPilot producer and its server-side origin policy are not implemented yet. See [the live source notes](../architecture/overview.md#read-only-boundary).
+The read-only live source accepts schema 1 and schema 2 JSON messages over `ws://` or `wss://` loopback addresses. RoadPilot currently serves schema 2 at `ws://127.0.0.1:17891`; its server only binds loopback, restricts browser origins, caps clients and input message sizes, and closes the stream when live telemetry is lost. See [the live source notes](../architecture/overview.md#read-only-boundary).

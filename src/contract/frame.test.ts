@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFrame, parseFrameV1, parseFrameV2, serializeFrameV1 } from './frameV1'
+import { parseFrame, parseFrameV1, parseFrameV2, serializeFrameV1 } from './frame'
 
 const minimalWire = () => ({
   format: 'roadpilot-visualization-frame',

@@ -2,7 +2,7 @@
 
 Standalone visualization and debugging application for the RoadPilot ecosystem.
 
-> **Status: early development.** The application runs in a browser on deterministic simulated data and can load RoadPilot-Map schema 1 packages locally for offline curve inspection. It is not connected to RoadPilot, and there are no releases.
+> **Status: early development.** The application runs in a browser on deterministic simulated data, can load RoadPilot-Map schema 1 packages locally for offline curve inspection, and has an opt-in local live stream. The live connection has not yet been verified with a running game, and there are no releases.
 
 ## Purpose
 
@@ -40,9 +40,9 @@ It is a separate repository and a separate application. It is a **read-only** vi
 | `roadpilot-visualization-frame` v1 and v2                        | Validated wire contracts; v2 keeps unavailable live readings explicitly null, see [`docs/contracts`](docs/contracts/visualization-frame-v1.md) and [v2](docs/contracts/visualization-frame-v2.md) |
 | 2D renderer                                                      | Canvas 2D with pan, zoom, ego-follow and seven independent layers; drawing runs outside React                                                                                                     |
 | RoadPilot-Map package                                            | Schema 1 geometry and optional graph validation in a worker; offline curve view, graph summary, topology sample and full graph inspection                                                         |
-| Live frame source                                                | Read-only, validated frame-v1/v2 WebSocket consumer restricted to loopback addresses; RoadPilot producer is not yet connected                                                                     |
+| Live frame source                                                | Read-only, validated frame-v1/v2 WebSocket consumer restricted to loopback addresses; RoadPilot producer is implemented, live verification is pending                                             |
 
-Not implemented yet: scenario library, session recording and replay, full unsampled graph rendering, RoadPilot live producer and end-to-end connection, 3D rendering, Tauri packaging.
+Not implemented yet: scenario library, session recording and replay, full unsampled graph rendering, live verification with ATS/ETS2, 3D rendering, Tauri packaging.
 
 ## Requirements
 
@@ -52,6 +52,8 @@ Not implemented yet: scenario library, session recording and replay, full unsamp
 Tauri 2 and the Rust toolchain are only needed for the later packaging phase.
 
 ## Development
+
+The deterministic simulation is the default. To connect to RoadPilot's local telemetry stream, run it alongside RoadPilot and open the Visualization dev server at `http://127.0.0.1:5173/?source=live`. The read-only stream is at `ws://127.0.0.1:17891`; schema 2 values without a source remain unavailable in the scene.
 
 ```sh
 npm install
